@@ -1,0 +1,6 @@
+{
+  "name": "Elsewedy University of Technology Portal",
+  "description": "Official Elsewedy University of Technology (SUT) portal featuring Student Information System (SIS), Gmail authentication, Faculty & Advisor management console, and course catalog.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
