@@ -18,7 +18,12 @@ export const SupabaseStatusModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const projectUrl = supabaseService.getProjectUrl();
 
   const handleCopySchema = () => {
-    const schemaSql = `-- ELSEWEDY UNIVERSITY OF TECHNOLOGY (SUT) - SUPABASE POSTGRESQL SCHEMA
+    const schemaSql = `-- ==============================================================================
+-- ELSEWEDY UNIVERSITY OF TECHNOLOGY (SUT) - SUPABASE POSTGRESQL SCHEMA
+-- Secure Row Level Security (RLS) Policies — least privilege
+-- ==============================================================================
+
+-- 1. Create Students Table
 CREATE TABLE IF NOT EXISTS public.students (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     student_id VARCHAR(32) UNIQUE NOT NULL,
@@ -38,6 +43,7 @@ CREATE TABLE IF NOT EXISTS public.students (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 2. Create Courses Table
 CREATE TABLE IF NOT EXISTS public.courses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     course_code VARCHAR(32) UNIQUE NOT NULL,
@@ -53,6 +59,7 @@ CREATE TABLE IF NOT EXISTS public.courses (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 3. Create Student Course Enrollments & Grades
 CREATE TABLE IF NOT EXISTS public.enrollments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     student_id VARCHAR(32) REFERENCES public.students(student_id) ON DELETE CASCADE,
@@ -65,6 +72,7 @@ CREATE TABLE IF NOT EXISTS public.enrollments (
     UNIQUE (student_id, course_code, semester)
 );
 
+-- 4. Create Attendance Records
 CREATE TABLE IF NOT EXISTS public.attendance_records (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     student_id VARCHAR(32) REFERENCES public.students(student_id) ON DELETE CASCADE,
@@ -78,6 +86,7 @@ CREATE TABLE IF NOT EXISTS public.attendance_records (
     UNIQUE (student_id, course_code)
 );
 
+-- 5. Create Student Academic Petitions & Requests
 CREATE TABLE IF NOT EXISTS public.student_requests (
     id VARCHAR(64) PRIMARY KEY,
     student_id VARCHAR(32) REFERENCES public.students(student_id) ON DELETE CASCADE,
@@ -91,6 +100,7 @@ CREATE TABLE IF NOT EXISTS public.student_requests (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 6. Create Advisor Directives & Meeting Notes
 CREATE TABLE IF NOT EXISTS public.advisor_notes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     student_id VARCHAR(32) REFERENCES public.students(student_id) ON DELETE CASCADE,
@@ -99,6 +109,7 @@ CREATE TABLE IF NOT EXISTS public.advisor_notes (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 7. Enable Row Level Security (RLS)
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.courses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
@@ -106,13 +117,118 @@ ALTER TABLE public.attendance_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.advisor_notes ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Public read students" ON public.students FOR SELECT USING (true);
-CREATE POLICY "Public insert/update students" ON public.students FOR ALL USING (true);
-CREATE POLICY "Public read courses" ON public.courses FOR SELECT USING (true);
-CREATE POLICY "Public read enrollments" ON public.enrollments FOR ALL USING (true);
-CREATE POLICY "Public read attendance" ON public.attendance_records FOR ALL USING (true);
-CREATE POLICY "Public read requests" ON public.student_requests FOR ALL USING (true);
-CREATE POLICY "Public read advisor_notes" ON public.advisor_notes FOR ALL USING (true);`;
+-- 7a. Drop old insecure "public" policies (safe to re-run)
+DROP POLICY IF EXISTS "Public read students" ON public.students;
+DROP POLICY IF EXISTS "Public insert/update students" ON public.students;
+DROP POLICY IF EXISTS "Public read courses" ON public.courses;
+DROP POLICY IF EXISTS "Public read enrollments" ON public.enrollments;
+DROP POLICY IF EXISTS "Public read attendance" ON public.attendance_records;
+DROP POLICY IF EXISTS "Public read requests" ON public.student_requests;
+DROP POLICY IF EXISTS "Public read advisor_notes" ON public.advisor_notes;
+
+-- 7b. Helper: check if current user is an advisor (university email domain)
+CREATE OR REPLACE FUNCTION public.is_advisor()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM auth.users
+    WHERE email = auth.email()
+      AND email LIKE '%@sut.edu.eg'
+  );
+$$;
+
+-- 7c. Helper: get student_id for the currently authenticated user
+CREATE OR REPLACE FUNCTION public.current_student_id()
+RETURNS VARCHAR
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT s.student_id
+  FROM public.students s
+  JOIN auth.users u ON s.email = u.email
+  WHERE u.id = auth.uid();
+$$;
+
+-- 7d. SECURE RLS POLICIES — least privilege, no anonymous access
+
+-- Students: read own row or advisor; modify advisor-only
+CREATE POLICY "students_select_own_or_advisor"
+  ON public.students FOR SELECT TO authenticated
+  USING (student_id = public.current_student_id() OR public.is_advisor());
+
+CREATE POLICY "students_modify_advisor_only"
+  ON public.students FOR ALL TO authenticated
+  USING (public.is_advisor()) WITH CHECK (public.is_advisor());
+
+-- Courses: read for all authenticated; modify advisor-only
+CREATE POLICY "courses_select_authenticated"
+  ON public.courses FOR SELECT TO authenticated
+  USING (true);
+
+CREATE POLICY "courses_modify_advisor_only"
+  ON public.courses FOR ALL TO authenticated
+  USING (public.is_advisor()) WITH CHECK (public.is_advisor());
+
+-- Enrollments: read own or advisor; modify advisor-only
+CREATE POLICY "enrollments_select_own_or_advisor"
+  ON public.enrollments FOR SELECT TO authenticated
+  USING (student_id = public.current_student_id() OR public.is_advisor());
+
+CREATE POLICY "enrollments_modify_advisor_only"
+  ON public.enrollments FOR ALL TO authenticated
+  USING (public.is_advisor()) WITH CHECK (public.is_advisor());
+
+-- Attendance: read own or advisor; modify advisor-only
+CREATE POLICY "attendance_select_own_or_advisor"
+  ON public.attendance_records FOR SELECT TO authenticated
+  USING (student_id = public.current_student_id() OR public.is_advisor());
+
+CREATE POLICY "attendance_modify_advisor_only"
+  ON public.attendance_records FOR ALL TO authenticated
+  USING (public.is_advisor()) WITH CHECK (public.is_advisor());
+
+-- Student requests: read own or advisor; insert own; update/delete advisor-only
+CREATE POLICY "requests_select_own_or_advisor"
+  ON public.student_requests FOR SELECT TO authenticated
+  USING (student_id = public.current_student_id() OR public.is_advisor());
+
+CREATE POLICY "requests_insert_own"
+  ON public.student_requests FOR INSERT TO authenticated
+  WITH CHECK (student_id = public.current_student_id());
+
+CREATE POLICY "requests_update_advisor_only"
+  ON public.student_requests FOR UPDATE TO authenticated
+  USING (public.is_advisor()) WITH CHECK (public.is_advisor());
+
+CREATE POLICY "requests_delete_advisor_only"
+  ON public.student_requests FOR DELETE TO authenticated
+  USING (public.is_advisor());
+
+-- Advisor notes: read own or advisor; modify advisor-only
+CREATE POLICY "advisor_notes_select_own_or_advisor"
+  ON public.advisor_notes FOR SELECT TO authenticated
+  USING (student_id = public.current_student_id() OR public.is_advisor());
+
+CREATE POLICY "advisor_notes_modify_advisor_only"
+  ON public.advisor_notes FOR ALL TO authenticated
+  USING (public.is_advisor()) WITH CHECK (public.is_advisor());
+
+-- 8. Seed Initial Data
+INSERT INTO public.students (student_id, email, student_name, cgpa, academic_status, academic_warnings, registered_ch, total_passed_ch, level, student_program, advisor_name, advisor_email)
+VALUES ('2300067', 'ahmed.eljeziry@gmail.com', 'Ahmed Elsayed Ahmed Hassan Eljeziry', 1.90, 'Academic Probation', 1, 11, 28, 1, 'Computer Science Technology (Dual Study)', 'Dr. Tarek Abdel-Azim', 'tarek.azim@sut.edu.eg')
+ON CONFLICT (student_id) DO NOTHING;
+
+INSERT INTO public.courses (course_code, title, credit_hours, lecture_hours, lab_hours, department, level, semester, description)
+VALUES
+('CS102', 'Structured Programming in C/C++', 3, 2, 2, 'Computer Science Technology', 1, 2, 'Core algorithmic thinking, arrays, memory management, pointers, and file I/O.'),
+('MATH102', 'Linear Algebra & Discrete Structures', 3, 3, 0, 'Basic Sciences', 1, 2, 'Vector spaces, matrices, determinants, graph theory, and boolean logic.'),
+('HUM231', 'Industrial Safety & Environmental Health', 2, 2, 0, 'Humanities', 1, 2, 'OSHA standards, workplace hazards in technology industries, risk mitigation.'),
+('ET104', 'Digital Electronics & Microcontrollers', 3, 2, 2, 'Engineering Technology', 1, 2, 'Logic gates, flip-flops, microcontrollers, embedded C, and breadboard interfacing.')
+ON CONFLICT (course_code) DO NOTHING;`;
 
     navigator.clipboard.writeText(schemaSql);
     setCopied(true);
@@ -254,7 +370,7 @@ CREATE POLICY "Public read advisor_notes" ON public.advisor_notes FOR ALL USING 
                 Go to the <strong>SQL Editor</strong> in your Supabase dashboard and run the schema script below.
               </li>
               <li>
-                In the Settings menu or `.env.example`, add:
+                In the Settings menu or <code className="bg-gray-100 px-1 py-0.5 rounded text-gray-700">.env.example</code>, add:
                 <div className="bg-gray-800 text-gray-200 p-2 rounded mt-1 font-mono text-[11px] select-all">
                   VITE_SUPABASE_URL=https://your-project.supabase.co<br />
                   VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6...
@@ -269,7 +385,7 @@ CREATE POLICY "Public read advisor_notes" ON public.advisor_notes FOR ALL USING 
           {/* Copyable SQL Schema */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="font-bold text-gray-900">PostgreSQL Schema (Ready for Supabase SQL Editor)</span>
+              <span className="font-bold text-gray-900">PostgreSQL Schema (Secure RLS — Ready for Supabase SQL Editor)</span>
               <button
                 type="button"
                 onClick={handleCopySchema}
@@ -280,32 +396,49 @@ CREATE POLICY "Public read advisor_notes" ON public.advisor_notes FOR ALL USING 
               </button>
             </div>
             <pre className="bg-[#1e2330] text-gray-200 p-3 rounded text-[11px] font-mono max-h-48 overflow-y-auto border border-gray-800">
-{`-- Create SUT Students Table
-CREATE TABLE public.students (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id VARCHAR(32) UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    student_name VARCHAR(255) NOT NULL,
-    cgpa NUMERIC(3, 2) DEFAULT 0.00,
-    academic_status VARCHAR(64) DEFAULT 'Good Standing',
-    academic_warnings INTEGER DEFAULT 0,
-    registered_ch INTEGER DEFAULT 0,
-    total_passed_ch INTEGER DEFAULT 0,
-    level INTEGER DEFAULT 1,
-    student_program VARCHAR(255) DEFAULT 'Computer Science Technology (Dual Study)',
-    advisor_name VARCHAR(255) DEFAULT 'Dr. Tarek Abdel-Azim',
-    advisor_email VARCHAR(255) DEFAULT 'tarek.azim@sut.edu.eg',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- Enable RLS
+{`-- Enable RLS on all tables
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Public read students" ON public.students FOR SELECT USING (true);
-CREATE POLICY "Public insert/update students" ON public.students FOR ALL USING (true);`}
+ALTER TABLE public.courses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.attendance_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.student_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.advisor_notes ENABLE ROW LEVEL SECURITY;
+
+-- Drop old insecure policies
+DROP POLICY IF EXISTS "Public read students" ON public.students;
+DROP POLICY IF EXISTS "Public insert/update students" ON public.students;
+-- ... (drops for all tables)
+
+-- Helper: is the current user an advisor?
+CREATE OR REPLACE FUNCTION public.is_advisor()
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER AS $$
+  SELECT EXISTS (SELECT 1 FROM auth.users
+    WHERE email = auth.email() AND email LIKE '%@sut.edu.eg');
+$$;
+
+-- Helper: get student_id for current user
+CREATE OR REPLACE FUNCTION public.current_student_id()
+RETURNS VARCHAR LANGUAGE sql SECURITY DEFINER AS $$
+  SELECT s.student_id FROM public.students s
+  JOIN auth.users u ON s.email = u.email
+  WHERE u.id = auth.uid();
+$$;
+
+-- SECURE POLICIES (least privilege, authenticated only)
+-- Students: read own row or advisor; modify advisor-only
+CREATE POLICY "students_select_own_or_advisor"
+  ON public.students FOR SELECT TO authenticated
+  USING (student_id = public.current_student_id() OR public.is_advisor());
+
+CREATE POLICY "students_modify_advisor_only"
+  ON public.students FOR ALL TO authenticated
+  USING (public.is_advisor()) WITH CHECK (public.is_advisor());
+
+-- ... (same pattern for all other tables)`}
             </pre>
             <p className="text-[11px] text-gray-500">
               The full schema file is also saved at <code className="bg-gray-100 px-1 py-0.5 rounded text-gray-700">supabase/schema.sql</code>.
+              <strong className="text-gray-700"> Click "Copy SQL Schema" for the complete script with all secure policies.</strong>
             </p>
           </div>
         </div>
