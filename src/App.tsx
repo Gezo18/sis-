@@ -234,6 +234,14 @@ export default function App() {
           onClose={() => setIsDbModalOpen(false)}
           onConnectionChanged={refreshUserData}
         />
+        {/* DEEP HEALTH & SECURITY CONSOLE MODAL */}
+        {isHealthConsoleOpen && (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex justify-center items-start p-4 md:p-6 overflow-y-auto">
+            <div className="max-w-5xl w-full my-4 md:my-8">
+              <DeepHealthSecurityConsole onClose={() => setIsHealthConsoleOpen(false)} />
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -536,8 +544,8 @@ export default function App() {
 
       {/* DEEP HEALTH & SECURITY CONSOLE MODAL */}
       {isHealthConsoleOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="max-w-5xl w-full my-8">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex justify-center items-start p-4 md:p-6 overflow-y-auto">
+          <div className="max-w-5xl w-full my-4 md:my-8">
             <DeepHealthSecurityConsole onClose={() => setIsHealthConsoleOpen(false)} />
           </div>
         </div>
