@@ -1,5 +1,6 @@
 export interface StudentProfile {
   studentName: string;
+  studentNameAr?: string;
   studentId: string;
   field: string;
   degree: string;
@@ -14,6 +15,18 @@ export interface StudentProfile {
   academicWarnings: number;
   advisorName: string;
   advisorEmail: string;
+  passedCH?: number;
+  requiredCH?: number;
+  major?: string;
+  faculty?: string;
+  advisor?: string;
+  email?: string;
+  phone?: string;
+  nationalId?: string;
+  birthDate?: string;
+  address?: string;
+  emergencyContact?: string;
+  term?: string;
 }
 
 export interface Course {
@@ -137,8 +150,152 @@ export interface UserAccount {
   requests?: StudentRequestRecord[];
   advisorNotes?: string[];
   // Teacher-specific data
+  teacherProfile?: TeacherProfile;
   department?: string;
   academicTitle?: string;
   officeLocation?: string;
   officeHours?: string;
 }
+
+export interface TeacherProfile {
+  teacherName: string;
+  teacherNameAr?: string;
+  staffId: string;
+  field: string;
+  degree: string;
+  teacherProgram: string;
+  teacherProgramAr: string;
+  level: string;
+  enrollmentStatus: string;
+  academicStatus: string;
+  totalTeachingCH: number;
+  registeredAdvisingCH: number;
+  cgpa?: number;
+  rating?: number;
+  department: string;
+  faculty: string;
+  email: string;
+  phone?: string;
+  officeLocation?: string;
+  officeHours?: string;
+  assignedCourses?: string[];
+  adviseeCount?: number;
+}
+
+export type UserRole = 'teacher' | 'admin' | 'student';
+
+export interface Admin {
+  id: string;
+  user_id: string;
+  email?: string;
+  created_at?: string;
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  name?: string;
+  teacherProfile?: Teacher;
+  adminProfile?: Admin;
+}
+
+export interface ApiResponse<T> {
+  data: T | null;
+  error: string | null;
+  count?: number | null;
+}
+
+export type StudentStatus = 'active' | 'inactive' | 'graduated' | 'suspended';
+
+export interface Student {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  student_id?: string;
+  date_of_birth?: string;
+  grade_level?: string;
+  field?: string;
+  program?: string;
+  cgpa?: number;
+  accum_ch?: number;
+  enrollment_date: string;
+  status: StudentStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export type StudentInput = Omit<
+  Student,
+  'id' | 'created_at' | 'updated_at' | 'enrollment_date' | 'status'
+> & {
+  date_of_birth?: string;
+  grade_level?: string;
+  field?: string;
+  program?: string;
+  cgpa?: number;
+  accum_ch?: number;
+  enrollment_date?: string;
+  status?: StudentStatus;
+};
+
+export interface Teacher {
+  id: string;
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  department: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TeacherInput = Omit<Teacher, 'id' | 'created_at' | 'updated_at'>;
+
+export interface CourseItem {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  credits: number;
+  teacher_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CourseInput = Omit<CourseItem, 'id' | 'created_at' | 'updated_at'>;
+
+export interface Enrollment {
+  id: string;
+  student_id: string;
+  course_id: string;
+  enrolled_at: string;
+  status: 'enrolled' | 'completed' | 'dropped';
+}
+
+export interface Grade {
+  id: string;
+  enrollment_id: string;
+  grade_type: string;
+  score: number;
+  max_score: number;
+  graded_at: string;
+  feedback?: string;
+}
+
+export type GradeInput = Omit<Grade, 'id' | 'graded_at' | 'max_score'> & {
+  max_score?: number;
+};
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  count: number | null;
+  error: string | null;
+}
+
+export interface SingleResponse<T> {
+  data: T | null;
+  error: string | null;
+}
+

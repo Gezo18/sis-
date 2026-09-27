@@ -1,0 +1,88 @@
+{
+  "description": "Cloudflare WAF and Edge Security Ruleset for Elsewedy University of Technology Portal",
+  "version": "2026.1",
+  "owasp_core_ruleset": {
+    "enabled": true,
+    "paranoia_level": 2,
+    "anomaly_threshold": 40,
+    "rules": [
+      {
+        "id": "942100",
+        "name": "SQL Injection (SQLi) Detection - Restrict Unparameterized Constructs",
+        "action": "block"
+      },
+      {
+        "id": "941100",
+        "name": "Cross-Site Scripting (XSS) Detection - Filter Script Tags and Events",
+        "action": "block"
+      },
+      {
+        "id": "930100",
+        "name": "Path Traversal & Local File Inclusion (LFI)",
+        "action": "block"
+      },
+      {
+        "id": "932100",
+        "name": "Remote Code Execution (RCE) Detection",
+        "action": "block"
+      }
+    ]
+  },
+  "bot_management": {
+    "enabled": true,
+    "score_threshold_block": 10,
+    "score_threshold_challenge": 30,
+    "verified_bots": {
+      "action": "allow",
+      "categories": ["Search Engine Crawler", "Uptime Monitor", "Googlebot", "Bingbot"]
+    },
+    "automated_threat_protection": {
+      "credential_stuffing_defense": "enabled",
+      "scraping_mitigation": "enabled"
+    }
+  },
+  "custom_waf_rules": [
+    {
+      "name": "Protect Admin Health Endpoint",
+      "expression": "(http.request.uri.path eq \"/api/health/deep\" and not http.request.headers[\"authorization\"][0] contains \"Bearer\")",
+      "action": "managed_challenge",
+      "description": "Issue challenge to any unauthenticated probe directed at deep health diagnostic endpoint"
+    },
+    {
+      "name": "Auth Endpoint Rate Limit and Challenge",
+      "expression": "(http.request.uri.path in {\"/api/auth/login\" \"/api/auth/token\"} and cf.threat_score gt 15)",
+      "action": "managed_challenge",
+      "description": "Challenge suspicious requests on login and authentication routes"
+    },
+    {
+      "name": "Block Malicious User Agents",
+      "expression": "(http.user_agent contains \"sqlmap\" or http.user_agent contains \"nikto\" or http.user_agent contains \"gobuster\" or http.user_agent contains \"nmap\")",
+      "action": "block",
+      "description": "Instantly block automated attack scanners and penetration tools"
+    }
+  ],
+  "geo_blocking": {
+    "policy": "allowlist_with_monitoring",
+    "primary_regions": ["EG", "SA", "AE", "US", "GB", "DE"],
+    "high_risk_regions_action": "managed_challenge",
+    "tor_exit_nodes_action": "block"
+  },
+  "rate_limiting_rules": [
+    {
+      "name": "Global API Rate Limit",
+      "match": "http.request.uri.path matches \"^/api/.*\"",
+      "requests_per_period": 120,
+      "period": 60,
+      "action": "block",
+      "timeout": 300
+    },
+    {
+      "name": "Auth Brute Force Shield",
+      "match": "http.request.uri.path matches \"^/api/auth/.*\"",
+      "requests_per_period": 15,
+      "period": 60,
+      "action": "block",
+      "timeout": 900
+    }
+  ]
+}

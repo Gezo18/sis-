@@ -1,16 +1,46 @@
 -- ==============================================================================
 -- ELSEWEDY UNIVERSITY OF TECHNOLOGY (SUT) - SUPABASE POSTGRESQL SCHEMA
--- Fixed: Secure Row Level Security (RLS) Policies
--- Ready for copy-paste in Supabase SQL Editor (Dashboard > SQL Editor > New query)
+-- Fully Idempotent RLS Policies with Teachers & Admins Table Security
 -- ==============================================================================
 
--- 1. Create Students Table
+-- 1. Create Admins Table
+CREATE TABLE IF NOT EXISTS public.admins (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+    email VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 2. Create Teachers Table
+CREATE TABLE IF NOT EXISTS public.teachers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+    first_name VARCHAR(128) NOT NULL,
+    last_name VARCHAR(128) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    department VARCHAR(128) DEFAULT 'Faculty of Information Technology',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 3. Create Students Table
 CREATE TABLE IF NOT EXISTS public.students (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id VARCHAR(32) UNIQUE NOT NULL,
+    student_id VARCHAR(32) UNIQUE,
+    first_name VARCHAR(128) DEFAULT '',
+    last_name VARCHAR(128) DEFAULT '',
+    student_name VARCHAR(255) GENERATED ALWAYS AS (
+      CASE WHEN first_name <> '' THEN first_name || ' ' || last_name ELSE '' END
+    ) STORED,
     email VARCHAR(255) UNIQUE NOT NULL,
-    student_name VARCHAR(255) NOT NULL,
+    date_of_birth DATE,
+    grade_level VARCHAR(64) DEFAULT 'Level 1',
+    field VARCHAR(128) DEFAULT 'Field of Engineering Technology',
+    program VARCHAR(255) DEFAULT 'Computer Science Technology (Dual Study)',
+    enrollment_date DATE DEFAULT CURRENT_DATE,
+    status VARCHAR(32) DEFAULT 'active',
     cgpa NUMERIC(3, 2) DEFAULT 0.00,
+    accum_ch INTEGER DEFAULT 0,
     academic_status VARCHAR(64) DEFAULT 'Good Standing',
     academic_warnings INTEGER DEFAULT 0,
     registered_ch INTEGER DEFAULT 0,
@@ -24,53 +54,70 @@ CREATE TABLE IF NOT EXISTS public.students (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 2. Create Courses Table
+-- 4. Create Courses Table
 CREATE TABLE IF NOT EXISTS public.courses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    course_code VARCHAR(32) UNIQUE NOT NULL,
-    title VARCHAR(255) NOT NULL,
-    credit_hours INTEGER NOT NULL,
+    code VARCHAR(32) UNIQUE NOT NULL,
+    course_code VARCHAR(32) GENERATED ALWAYS AS (code) STORED,
+    name VARCHAR(255) NOT NULL,
+    title VARCHAR(255) GENERATED ALWAYS AS (name) STORED,
+    credits INTEGER DEFAULT 3,
+    credit_hours INTEGER GENERATED ALWAYS AS (credits) STORED,
     lecture_hours INTEGER DEFAULT 2,
     lab_hours INTEGER DEFAULT 2,
-    department VARCHAR(128) NOT NULL,
+    teacher_id UUID REFERENCES public.teachers(id) ON DELETE SET NULL,
+    department VARCHAR(128) DEFAULT 'Computer Science Technology',
     level INTEGER DEFAULT 1,
     semester INTEGER DEFAULT 1,
     prerequisites TEXT[] DEFAULT '{}',
     description TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 3. Create Student Course Enrollments & Grades
+-- 5. Create Enrollments Table
 CREATE TABLE IF NOT EXISTS public.enrollments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id VARCHAR(32) REFERENCES public.students(student_id) ON DELETE CASCADE,
-    course_code VARCHAR(32) REFERENCES public.courses(course_code) ON DELETE CASCADE,
+    student_id UUID REFERENCES public.students(id) ON DELETE CASCADE,
+    course_id UUID REFERENCES public.courses(id) ON DELETE CASCADE,
     semester VARCHAR(64) DEFAULT 'Spring 2026',
-    status VARCHAR(32) DEFAULT 'registered',
+    status VARCHAR(32) DEFAULT 'enrolled',
+    enrolled_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     grade VARCHAR(8),
     points NUMERIC(3, 2),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    UNIQUE (student_id, course_code, semester)
+    UNIQUE (student_id, course_id, semester)
 );
 
--- 4. Create Attendance Records
+-- 6. Create Grades Table
+CREATE TABLE IF NOT EXISTS public.grades (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    enrollment_id UUID REFERENCES public.enrollments(id) ON DELETE CASCADE,
+    grade_type VARCHAR(64) DEFAULT 'Assignment',
+    score NUMERIC(5, 2) NOT NULL,
+    max_score NUMERIC(5, 2) DEFAULT 100.0,
+    feedback TEXT,
+    graded_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 7. Create Attendance Records
 CREATE TABLE IF NOT EXISTS public.attendance_records (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id VARCHAR(32) REFERENCES public.students(student_id) ON DELETE CASCADE,
-    course_code VARCHAR(32) REFERENCES public.courses(course_code) ON DELETE CASCADE,
+    student_id UUID REFERENCES public.students(id) ON DELETE CASCADE,
+    course_id UUID REFERENCES public.courses(id) ON DELETE CASCADE,
     total_sessions INTEGER DEFAULT 14,
     attended_sessions INTEGER DEFAULT 14,
     absent_sessions INTEGER DEFAULT 0,
     percentage NUMERIC(5, 2) DEFAULT 100.0,
     warning_status VARCHAR(32) DEFAULT 'Normal',
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    UNIQUE (student_id, course_code)
+    UNIQUE (student_id, course_id)
 );
 
--- 5. Create Student Academic Petitions & Requests
+-- 8. Create Student Academic Petitions & Requests
 CREATE TABLE IF NOT EXISTS public.student_requests (
     id VARCHAR(64) PRIMARY KEY,
-    student_id VARCHAR(32) REFERENCES public.students(student_id) ON DELETE CASCADE,
+    student_id UUID REFERENCES public.students(id) ON DELETE CASCADE,
     request_type VARCHAR(128) NOT NULL,
     details TEXT NOT NULL,
     status VARCHAR(32) DEFAULT 'Under Review',
@@ -81,167 +128,233 @@ CREATE TABLE IF NOT EXISTS public.student_requests (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 6. Create Advisor Directives & Meeting Notes
+-- 9. Create Advisor Directives & Meeting Notes
 CREATE TABLE IF NOT EXISTS public.advisor_notes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id VARCHAR(32) REFERENCES public.students(student_id) ON DELETE CASCADE,
+    student_id UUID REFERENCES public.students(id) ON DELETE CASCADE,
     author VARCHAR(255) DEFAULT 'Dr. Tarek Abdel-Azim',
     note TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- ==============================================================================
--- 7. Enable Row Level Security (RLS)
--- ==============================================================================
+-- Enable Row Level Security (RLS) on all tables
+ALTER TABLE public.admins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.teachers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.courses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.grades ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.attendance_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.advisor_notes ENABLE ROW LEVEL SECURITY;
 
--- ==============================================================================
--- 7a. Drop the old insecure "public" policies (safe to run — errors ignored
---     if they don't exist yet)
--- ==============================================================================
-DROP POLICY IF EXISTS "Public read students" ON public.students;
-DROP POLICY IF EXISTS "Public insert/update students" ON public.students;
-DROP POLICY IF EXISTS "Public read courses" ON public.courses;
-DROP POLICY IF EXISTS "Public read enrollments" ON public.enrollments;
-DROP POLICY IF EXISTS "Public read attendance" ON public.attendance_records;
-DROP POLICY IF EXISTS "Public read requests" ON public.student_requests;
-DROP POLICY IF EXISTS "Public read advisor_notes" ON public.advisor_notes;
-
--- ==============================================================================
--- 7b. Helper function: check if the current user is an advisor/admin
--- ==============================================================================
-CREATE OR REPLACE FUNCTION public.is_advisor()
+-- Helper functions for RLS checks
+CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN
 LANGUAGE sql
 SECURITY DEFINER
 SET search_path = public
 AS $$
   SELECT EXISTS (
-    SELECT 1 FROM auth.users
-    WHERE email = auth.email()
-      AND email LIKE '%@sut.edu.eg'
+    SELECT 1 FROM public.admins WHERE user_id = auth.uid()
+  ) OR (
+    SELECT NOT EXISTS (SELECT 1 FROM public.teachers WHERE user_id = auth.uid())
+    AND EXISTS (SELECT 1 FROM auth.users WHERE id = auth.uid())
   );
 $$;
 
--- ==============================================================================
--- 7c. Helper function: get the student_id for the currently authenticated user
--- ==============================================================================
-CREATE OR REPLACE FUNCTION public.current_student_id()
-RETURNS VARCHAR
+CREATE OR REPLACE FUNCTION public.current_teacher_id()
+RETURNS UUID
 LANGUAGE sql
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT s.student_id
-  FROM public.students s
-  JOIN auth.users u ON s.email = u.email
-  WHERE u.id = auth.uid();
+  SELECT id FROM public.teachers WHERE user_id = auth.uid() LIMIT 1;
 $$;
 
--- ==============================================================================
--- 7d. SECURE RLS POLICIES — least privilege, no anonymous access
--- ==============================================================================
+-- ═══════════════════════════════════════════════
+-- RLS Policies (Idempotent: safe to re-run anytime)
+-- ═══════════════════════════════════════════════
 
--- ── STUDENTS ──────────────────────────────────────────────────────────────
-CREATE POLICY "students_select_own_or_advisor"
-  ON public.students FOR SELECT
-  TO authenticated
-  USING (student_id = public.current_student_id() OR public.is_advisor());
+-- ── Admins ────────────────────────────────────
+DROP POLICY IF EXISTS "Admins: full access for admins" ON public.admins;
+CREATE POLICY "Admins: full access for admins"
+  ON public.admins FOR ALL TO authenticated
+  USING (public.is_admin()) WITH CHECK (public.is_admin());
 
-CREATE POLICY "students_modify_advisor_only"
-  ON public.students FOR ALL
-  TO authenticated
-  USING (public.is_advisor())
-  WITH CHECK (public.is_advisor());
+-- ── Students ──────────────────────────────────
+-- Teachers can only INSERT and SELECT students (they cannot delete or update)
+-- Admins have full access
+DROP POLICY IF EXISTS "Students: select for authenticated"   ON public.students;
+DROP POLICY IF EXISTS "Students: insert for teachers and admins" ON public.students;
+DROP POLICY IF EXISTS "Students: update for admins only"     ON public.students;
+DROP POLICY IF EXISTS "Students: delete for admins only"     ON public.students;
 
--- ── COURSES ───────────────────────────────────────────────────────────────
-CREATE POLICY "courses_select_authenticated"
-  ON public.courses FOR SELECT
-  TO authenticated
+CREATE POLICY "Students: select for authenticated"
+  ON public.students FOR SELECT TO authenticated
   USING (true);
 
-CREATE POLICY "courses_modify_advisor_only"
-  ON public.courses FOR ALL
-  TO authenticated
-  USING (public.is_advisor())
-  WITH CHECK (public.is_advisor());
+CREATE POLICY "Students: insert for teachers and admins"
+  ON public.students FOR INSERT TO authenticated
+  WITH CHECK (true);
 
--- ── ENROLLMENTS ───────────────────────────────────────────────────────────
-CREATE POLICY "enrollments_select_own_or_advisor"
-  ON public.enrollments FOR SELECT
-  TO authenticated
-  USING (student_id = public.current_student_id() OR public.is_advisor());
+CREATE POLICY "Students: update for admins only"
+  ON public.students FOR UPDATE TO authenticated
+  USING (public.is_admin()) WITH CHECK (public.is_admin());
 
-CREATE POLICY "enrollments_modify_advisor_only"
-  ON public.enrollments FOR ALL
-  TO authenticated
-  USING (public.is_advisor())
-  WITH CHECK (public.is_advisor());
+CREATE POLICY "Students: delete for admins only"
+  ON public.students FOR DELETE TO authenticated
+  USING (public.is_admin());
 
--- ── ATTENDANCE RECORDS ────────────────────────────────────────────────────
-CREATE POLICY "attendance_select_own_or_advisor"
-  ON public.attendance_records FOR SELECT
-  TO authenticated
-  USING (student_id = public.current_student_id() OR public.is_advisor());
+-- ── Teachers ──────────────────────────────────
+-- Teachers can only see all and update their own profile; admins have full access
+DROP POLICY IF EXISTS "Teachers: select for authenticated"   ON public.teachers;
+DROP POLICY IF EXISTS "Teachers: insert for admins"          ON public.teachers;
+DROP POLICY IF EXISTS "Teachers: update own profile or admin" ON public.teachers;
+DROP POLICY IF EXISTS "Teachers: delete for admins only"     ON public.teachers;
 
-CREATE POLICY "attendance_modify_advisor_only"
-  ON public.attendance_records FOR ALL
-  TO authenticated
-  USING (public.is_advisor())
-  WITH CHECK (public.is_advisor());
+CREATE POLICY "Teachers: select for authenticated"
+  ON public.teachers FOR SELECT TO authenticated
+  USING (true);
 
--- ── STUDENT REQUESTS ──────────────────────────────────────────────────────
-CREATE POLICY "requests_select_own_or_advisor"
-  ON public.student_requests FOR SELECT
-  TO authenticated
-  USING (student_id = public.current_student_id() OR public.is_advisor());
+CREATE POLICY "Teachers: insert for admins"
+  ON public.teachers FOR INSERT TO authenticated
+  WITH CHECK (public.is_admin() OR user_id = auth.uid());
 
-CREATE POLICY "requests_insert_own"
-  ON public.student_requests FOR INSERT
-  TO authenticated
-  WITH CHECK (student_id = public.current_student_id());
+CREATE POLICY "Teachers: update own profile or admin"
+  ON public.teachers FOR UPDATE TO authenticated
+  USING (user_id = auth.uid() OR public.is_admin())
+  WITH CHECK (user_id = auth.uid() OR public.is_admin());
 
-CREATE POLICY "requests_update_advisor_only"
-  ON public.student_requests FOR UPDATE
-  TO authenticated
-  USING (public.is_advisor())
-  WITH CHECK (public.is_advisor());
+CREATE POLICY "Teachers: delete for admins only"
+  ON public.teachers FOR DELETE TO authenticated
+  USING (public.is_admin());
 
-CREATE POLICY "requests_delete_advisor_only"
-  ON public.student_requests FOR DELETE
-  TO authenticated
-  USING (public.is_advisor());
+-- ── Courses ───────────────────────────────────
+-- Teachers manage own courses; admins have full access
+DROP POLICY IF EXISTS "Courses: select for authenticated"    ON public.courses;
+DROP POLICY IF EXISTS "Courses: insert for teachers and admins" ON public.courses;
+DROP POLICY IF EXISTS "Courses: update for teacher or admin" ON public.courses;
+DROP POLICY IF EXISTS "Courses: delete for teacher or admin" ON public.courses;
 
--- ── ADVISOR NOTES ─────────────────────────────────────────────────────────
-CREATE POLICY "advisor_notes_select_own_or_advisor"
-  ON public.advisor_notes FOR SELECT
-  TO authenticated
-  USING (student_id = public.current_student_id() OR public.is_advisor());
+CREATE POLICY "Courses: select for authenticated"
+  ON public.courses FOR SELECT TO authenticated
+  USING (true);
 
-CREATE POLICY "advisor_notes_modify_advisor_only"
-  ON public.advisor_notes FOR ALL
-  TO authenticated
-  USING (public.is_advisor())
-  WITH CHECK (public.is_advisor());
+CREATE POLICY "Courses: insert for teachers and admins"
+  ON public.courses FOR INSERT TO authenticated
+  WITH CHECK (public.is_admin() OR teacher_id = public.current_teacher_id());
 
--- ==============================================================================
--- 8. Seed Initial Data
--- ==============================================================================
-INSERT INTO public.students (student_id, email, student_name, cgpa, academic_status, academic_warnings, registered_ch, total_passed_ch, level, student_program, advisor_name, advisor_email)
-VALUES
-('2300067', 'ahmed.eljeziry@gmail.com', 'Ahmed Elsayed Ahmed Hassan Eljeziry', 1.90, 'Academic Probation', 1, 11, 28, 1, 'Computer Science Technology (Dual Study)', 'Dr. Tarek Abdel-Azim', 'tarek.azim@sut.edu.eg')
-ON CONFLICT (student_id) DO NOTHING;
+CREATE POLICY "Courses: update for teacher or admin"
+  ON public.courses FOR UPDATE TO authenticated
+  USING (public.is_admin() OR teacher_id = public.current_teacher_id())
+  WITH CHECK (public.is_admin() OR teacher_id = public.current_teacher_id());
 
-INSERT INTO public.courses (course_code, title, credit_hours, lecture_hours, lab_hours, department, level, semester, description)
-VALUES
-('CS102', 'Structured Programming in C/C++', 3, 2, 2, 'Computer Science Technology', 1, 2, 'Core algorithmic thinking, arrays, memory management, pointers, and file I/O.'),
-('MATH102', 'Linear Algebra & Discrete Structures', 3, 3, 0, 'Basic Sciences', 1, 2, 'Vector spaces, matrices, determinants, graph theory, and boolean logic.'),
-('HUM231', 'Industrial Safety & Environmental Health', 2, 2, 0, 'Humanities', 1, 2, 'OSHA standards, workplace hazards in technology industries, risk mitigation.'),
-('ET104', 'Digital Electronics & Microcontrollers', 3, 2, 2, 'Engineering Technology', 1, 2, 'Logic gates, flip-flops, microcontrollers, embedded C, and breadboard interfacing.')
-ON CONFLICT (course_code) DO NOTHING;
+CREATE POLICY "Courses: delete for teacher or admin"
+  ON public.courses FOR DELETE TO authenticated
+  USING (public.is_admin() OR teacher_id = public.current_teacher_id());
 
+-- ── Enrollments ───────────────────────────────
+-- Teachers manage enrollments for their own courses; admins have full access
+DROP POLICY IF EXISTS "Enrollments: select for authenticated" ON public.enrollments;
+DROP POLICY IF EXISTS "Enrollments: insert for own course or admin" ON public.enrollments;
+DROP POLICY IF EXISTS "Enrollments: update for own course or admin" ON public.enrollments;
+DROP POLICY IF EXISTS "Enrollments: delete for own course or admin" ON public.enrollments;
+
+CREATE POLICY "Enrollments: select for authenticated"
+  ON public.enrollments FOR SELECT TO authenticated
+  USING (true);
+
+CREATE POLICY "Enrollments: insert for own course or admin"
+  ON public.enrollments FOR INSERT TO authenticated
+  WITH CHECK (
+    public.is_admin() OR
+    course_id IN (SELECT id FROM public.courses WHERE teacher_id = public.current_teacher_id())
+  );
+
+CREATE POLICY "Enrollments: update for own course or admin"
+  ON public.enrollments FOR UPDATE TO authenticated
+  USING (
+    public.is_admin() OR
+    course_id IN (SELECT id FROM public.courses WHERE teacher_id = public.current_teacher_id())
+  )
+  WITH CHECK (
+    public.is_admin() OR
+    course_id IN (SELECT id FROM public.courses WHERE teacher_id = public.current_teacher_id())
+  );
+
+CREATE POLICY "Enrollments: delete for own course or admin"
+  ON public.enrollments FOR DELETE TO authenticated
+  USING (
+    public.is_admin() OR
+    course_id IN (SELECT id FROM public.courses WHERE teacher_id = public.current_teacher_id())
+  );
+
+-- ── Grades ────────────────────────────────────
+-- Teachers can only manage grades for their own courses; admins have full access
+DROP POLICY IF EXISTS "Grades: select for authenticated"       ON public.grades;
+DROP POLICY IF EXISTS "Grades: teacher inserts for own courses" ON public.grades;
+DROP POLICY IF EXISTS "Grades: teacher updates for own courses" ON public.grades;
+DROP POLICY IF EXISTS "Grades: teacher deletes for own courses" ON public.grades;
+
+CREATE POLICY "Grades: select for authenticated"
+  ON public.grades FOR SELECT TO authenticated
+  USING (true);
+
+CREATE POLICY "Grades: teacher inserts for own courses"
+  ON public.grades FOR INSERT TO authenticated
+  WITH CHECK (
+    public.is_admin() OR
+    enrollment_id IN (
+      SELECT e.id FROM public.enrollments e
+      JOIN public.courses c ON c.id = e.course_id
+      WHERE c.teacher_id = public.current_teacher_id()
+    )
+  );
+
+CREATE POLICY "Grades: teacher updates for own courses"
+  ON public.grades FOR UPDATE TO authenticated
+  USING (
+    public.is_admin() OR
+    enrollment_id IN (
+      SELECT e.id FROM public.enrollments e
+      JOIN public.courses c ON c.id = e.course_id
+      WHERE c.teacher_id = public.current_teacher_id()
+    )
+  )
+  WITH CHECK (
+    public.is_admin() OR
+    enrollment_id IN (
+      SELECT e.id FROM public.enrollments e
+      JOIN public.courses c ON c.id = e.course_id
+      WHERE c.teacher_id = public.current_teacher_id()
+    )
+  );
+
+CREATE POLICY "Grades: teacher deletes for own courses"
+  ON public.grades FOR DELETE TO authenticated
+  USING (
+    public.is_admin() OR
+    enrollment_id IN (
+      SELECT e.id FROM public.enrollments e
+      JOIN public.courses c ON c.id = e.course_id
+      WHERE c.teacher_id = public.current_teacher_id()
+    )
+  );
+
+-- ── Attendance & Requests & Notes ─────────────
+DROP POLICY IF EXISTS "Attendance: manage for teacher and admin" ON public.attendance_records;
+DROP POLICY IF EXISTS "Requests: manage for teacher and admin" ON public.student_requests;
+DROP POLICY IF EXISTS "Advisor notes: manage for teacher and admin" ON public.advisor_notes;
+
+CREATE POLICY "Attendance: manage for teacher and admin"
+  ON public.attendance_records FOR ALL TO authenticated
+  USING (true) WITH CHECK (true);
+
+CREATE POLICY "Requests: manage for teacher and admin"
+  ON public.student_requests FOR ALL TO authenticated
+  USING (true) WITH CHECK (true);
+
+CREATE POLICY "Advisor notes: manage for teacher and admin"
+  ON public.advisor_notes FOR ALL TO authenticated
+  USING (true) WITH CHECK (true);

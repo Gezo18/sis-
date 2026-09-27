@@ -6,6 +6,7 @@ import { userStore } from './data/userStore';
 // Auth Components
 import { AuthModal } from './components/auth/AuthModal';
 import { LoginPage } from './components/auth/LoginPage';
+import { TeacherLoginPage } from './components/auth/TeacherLoginPage';
 import { DatabaseConfigModal } from './components/common/DatabaseConfigModal';
 import { isSupabaseConfigured } from './lib/supabase';
 
@@ -34,7 +35,8 @@ import { CampusNewsSection } from './components/university/CampusNewsSection';
 import { AboutSection } from './components/university/AboutSection';
 import { UniversityFooter } from './components/university/UniversityFooter';
 
-import { UserCheck, UserPlus, LogIn, GraduationCap, ShieldCheck, ArrowLeft } from 'lucide-react';
+import { UserCheck, UserPlus, LogIn, GraduationCap, ShieldCheck, ArrowLeft, Activity } from 'lucide-react';
+import { DeepHealthSecurityConsole } from './components/health/DeepHealthSecurityConsole';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => userStore.getCurrentUser());
@@ -43,9 +45,6 @@ export default function App() {
   const [student, setStudent] = useState<StudentProfile>(() => {
     const current = userStore.getCurrentUser();
     if (current?.role === 'student' && current.studentProfile) return current.studentProfile;
-    // If faculty or guest, default to demo student Ahmed
-    const demo = userStore.getUsers().find(u => u.studentProfile?.studentId === '250103180');
-    if (demo?.studentProfile) return demo.studentProfile;
     return initialStudentProfile;
   });
 
@@ -55,6 +54,12 @@ export default function App() {
     return 'sis';
   });
 
+  const [loginType, setLoginType] = useState<'student' | 'teacher'>(() => {
+    const current = userStore.getCurrentUser();
+    if (current?.role === 'teacher') return 'teacher';
+    return 'student';
+  });
+
   const [activeSisView, setActiveSisView] = useState<SisView>('home');
   const [activeUniTab, setActiveUniTab] = useState<'home' | 'catalog' | 'events' | 'news' | 'about'>('home');
 
@@ -62,6 +67,67 @@ export default function App() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
+  const [isHealthConsoleOpen, setIsHealthConsoleOpen] = useState(false);
+
+  // Sync route query parameters and pull latest data from Supabase on mount
+  useEffect(() => {
+    // 1. Live synchronization with Supabase cloud database
+    userStore.syncWithSupabase().then(() => {
+      const freshUser = userStore.getCurrentUser();
+      if (freshUser?.role === 'student' && freshUser.studentProfile) {
+        setCurrentUser(freshUser);
+        setStudent(freshUser.studentProfile);
+      }
+    });
+
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const viewParam = params.get('view');
+      if (viewParam === 'health-security') {
+        setIsHealthConsoleOpen(true);
+      } else if (viewParam === 'catalog') {
+        setAppMode('portal');
+        setActiveUniTab('catalog');
+      } else if (viewParam === 'events') {
+        setAppMode('portal');
+        setActiveUniTab('events');
+      } else if (viewParam === 'news') {
+        setAppMode('portal');
+        setActiveUniTab('news');
+      } else if (viewParam === 'about') {
+        setAppMode('portal');
+        setActiveUniTab('about');
+      } else if (viewParam === 'academic-plan') {
+        setAppMode('sis');
+        setActiveSisView('academic-plan');
+      } else if (viewParam === 'attendance') {
+        setAppMode('sis');
+        setActiveSisView('attendance');
+      } else if (viewParam === 'activity-marks') {
+        setAppMode('sis');
+        setActiveSisView('activity-marks');
+      } else if (viewParam === 'exam-schedule') {
+        setAppMode('sis');
+        setActiveSisView('exam-schedule');
+      } else if (viewParam === 'requests') {
+        setAppMode('sis');
+        setActiveSisView('req-student-services');
+      } else if (viewParam === 'staff') {
+        setAppMode('sis');
+        setActiveSisView('staff');
+      } else if (viewParam === 'reports') {
+        setAppMode('sis');
+        setActiveSisView('reports');
+      } else if (viewParam === 'teacher') {
+        setAppMode('teacher');
+      } else if (viewParam === 'sis-home') {
+        setAppMode('sis');
+        setActiveSisView('home');
+      }
+    } catch {
+      // Ignore
+    }
+  }, []);
 
   // Sync student profile when user logs in or is edited
   const refreshUserData = () => {
@@ -84,11 +150,13 @@ export default function App() {
     setCurrentUser(user);
     setInspectedStudent(null);
     if (user.role === 'teacher') {
+      setLoginType('teacher');
       setAppMode('teacher');
     } else {
       if (user.studentProfile) {
         setStudent(user.studentProfile);
       }
+      setLoginType('student');
       setAppMode('sis');
       setActiveSisView('home');
     }
@@ -98,10 +166,18 @@ export default function App() {
     userStore.setCurrentUser(null);
     setCurrentUser(null);
     setInspectedStudent(null);
-    const demo = userStore.getUsers().find(u => u.studentProfile?.studentId === '250103180');
-    setStudent(demo?.studentProfile || initialStudentProfile);
+    setStudent(initialStudentProfile);
+    setLoginType('student');
     setAppMode('sis');
     setActiveSisView('home');
+  };
+
+  const handleTeacherLogout = () => {
+    userStore.setCurrentUser(null);
+    setCurrentUser(null);
+    setInspectedStudent(null);
+    setLoginType('teacher');
+    setAppMode('teacher');
   };
 
   const handleOpenAuth = (mode: 'signin' | 'signup' = 'signin') => {
@@ -118,11 +194,41 @@ export default function App() {
   if (!currentUser && appMode !== 'portal') {
     return (
       <div className="min-h-screen flex flex-col bg-[#f3f5f8] text-gray-900 font-sans">
-        <LoginPage
-          onLoginSuccess={handleLoginSuccess}
-          onBrowsePublicSite={() => setAppMode('portal')}
-          onOpenDatabaseConfig={() => setIsDbModalOpen(true)}
-        />
+        <div className="bg-[#1b212f] text-white px-4 py-1.5 text-xs flex items-center justify-between border-b border-gray-800">
+          <span className="font-semibold text-gray-300">Elsewedy University of Technology — Secure Authentication Gateway</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsHealthConsoleOpen(true)}
+              className="px-2.5 py-0.5 rounded text-[11px] font-bold bg-blue-900/80 hover:bg-blue-800 text-blue-200 border border-blue-400/40 cursor-pointer transition-colors flex items-center gap-1 shadow-xs"
+              title="Open Deep Health & Security Diagnostics"
+            >
+              <Activity className="w-3 h-3 text-emerald-400 animate-pulse" />
+              <span>Health & APM</span>
+            </button>
+          </div>
+        </div>
+        {loginType === 'teacher' || appMode === 'teacher' ? (
+          <TeacherLoginPage
+            onLoginSuccess={handleLoginSuccess}
+            onSwitchToStudentLogin={() => {
+              setLoginType('student');
+              setAppMode('sis');
+            }}
+            onBrowsePublicSite={() => setAppMode('portal')}
+            onOpenDatabaseConfig={() => setIsDbModalOpen(true)}
+          />
+        ) : (
+          <LoginPage
+            onLoginSuccess={handleLoginSuccess}
+            onBrowsePublicSite={() => setAppMode('portal')}
+            onOpenDatabaseConfig={() => setIsDbModalOpen(true)}
+            onSwitchToTeacherLogin={() => {
+              setLoginType('teacher');
+              setAppMode('teacher');
+            }}
+          />
+        )}
         <DatabaseConfigModal
           isOpen={isDbModalOpen}
           onClose={() => setIsDbModalOpen(false)}
@@ -166,23 +272,35 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2">
-          {currentUser?.role === 'teacher' && (
-            <button
-              type="button"
-              onClick={() => {
-                setInspectedStudent(null);
-                setAppMode('teacher');
-              }}
-              className={`px-2.5 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-colors flex items-center gap-1 ${
-                appMode === 'teacher'
-                  ? 'bg-amber-400 text-gray-950 font-black shadow-xs'
-                  : 'bg-amber-500/30 hover:bg-amber-500/50 text-amber-200'
-              }`}
-            >
-              <ShieldCheck className="w-3 h-3" />
-              <span>Advisor Console</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setIsHealthConsoleOpen(true)}
+            className="px-2.5 py-0.5 rounded text-[11px] font-bold bg-blue-900/80 hover:bg-blue-800 text-blue-200 border border-blue-400/40 cursor-pointer transition-colors flex items-center gap-1 shadow-xs"
+            title="Open Deep Health & Security Diagnostics"
+          >
+            <Activity className="w-3 h-3 text-emerald-400 animate-pulse" />
+            <span>Health & APM</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setInspectedStudent(null);
+              if (!currentUser || currentUser.role !== 'teacher') {
+                setLoginType('teacher');
+              }
+              setAppMode('teacher');
+            }}
+            className={`px-2.5 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-colors flex items-center gap-1 ${
+              appMode === 'teacher'
+                ? 'bg-amber-400 text-gray-950 font-black shadow-xs'
+                : 'bg-amber-500/30 hover:bg-amber-500/50 text-amber-200'
+            }`}
+            title="Open Elsewedy University Staff SIS Portal"
+          >
+            <ShieldCheck className="w-3 h-3" />
+            <span>👨‍🏫 Teacher Mode (Staff SIS)</span>
+          </button>
 
           <button
             type="button"
@@ -191,7 +309,7 @@ export default function App() {
               appMode === 'sis' ? 'bg-emerald-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'
             }`}
           >
-            SIS Portal
+            Student SIS
           </button>
 
           <button
@@ -216,10 +334,22 @@ export default function App() {
       </div>
 
       {/* RENDER MODE: FACULTY & ADVISOR CONSOLE */}
-      {appMode === 'teacher' && currentUser && (
+      {appMode === 'teacher' && (
         <TeacherDashboard
-          currentUser={currentUser}
-          onLogout={handleLogout}
+          currentUser={
+            currentUser?.role === 'teacher'
+              ? currentUser
+              : (userStore.getUsers().find(u => u.id === 'usr_teacher_hend') || {
+                  id: 'usr_teacher_hend',
+                  email: 'hend.fouad@sut.edu.eg',
+                  role: 'teacher',
+                  name: 'Dr. Hend Adel Ahmed Fouad',
+                  academicTitle: 'Assistant Professor & Academic Advisor',
+                  teacherProfile: userStore.getUsers().find(u => u.id === 'usr_teacher_hend')?.teacherProfile,
+                  createdAt: new Date().toISOString(),
+                })
+          }
+          onLogout={handleTeacherLogout}
           onSwitchToPortal={() => setAppMode('portal')}
           onSwitchToStudentView={(selectedStudentUser) => {
             if (selectedStudentUser.studentProfile) {
@@ -350,6 +480,7 @@ export default function App() {
             activeTab={activeUniTab}
             onSelectTab={(tab) => setActiveUniTab(tab)}
             onOpenSis={() => setAppMode('sis')}
+            onOpenTeacherMode={() => setAppMode('teacher')}
             student={student}
             currentUser={currentUser}
             onOpenAuth={handleOpenAuth}
@@ -402,6 +533,15 @@ export default function App() {
         onClose={() => setIsDbModalOpen(false)}
         onConnectionChanged={refreshUserData}
       />
+
+      {/* DEEP HEALTH & SECURITY CONSOLE MODAL */}
+      {isHealthConsoleOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="max-w-5xl w-full my-8">
+            <DeepHealthSecurityConsole onClose={() => setIsHealthConsoleOpen(false)} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

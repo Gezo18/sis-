@@ -7,6 +7,7 @@ interface Props {
   activeTab: 'home' | 'catalog' | 'events' | 'news' | 'about';
   onSelectTab: (tab: 'home' | 'catalog' | 'events' | 'news' | 'about') => void;
   onOpenSis: () => void;
+  onOpenTeacherMode?: () => void;
   student: StudentProfile;
   currentUser: UserAccount | null;
   onOpenAuth: (mode?: 'signin' | 'signup') => void;
@@ -16,6 +17,7 @@ export const UniversityNavbar: React.FC<Props> = ({
   activeTab, 
   onSelectTab, 
   onOpenSis, 
+  onOpenTeacherMode,
   student,
   currentUser,
   onOpenAuth,
@@ -108,8 +110,23 @@ export const UniversityNavbar: React.FC<Props> = ({
           </button>
         </nav>
 
-        {/* Action Buttons: Direct Access to SIS */}
+        {/* Action Buttons: Direct Access to SIS & Teacher Mode */}
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            id="btn-launch-teacher-mode"
+            onClick={onOpenTeacherMode}
+            className="bg-[#1b212f] hover:bg-[#262f42] text-white px-3 sm:px-3.5 py-2 rounded font-bold text-xs sm:text-sm flex items-center gap-2 shadow-xs transition-all cursor-pointer border border-[#3b475c]"
+            title="Open SUT Faculty & Teacher Portal"
+          >
+            <span className="text-base">👨‍🏫</span>
+            <div className="text-left leading-tight hidden sm:block">
+              <span className="block text-[10px] text-[#86efac] font-medium uppercase tracking-wider">Staff SIS</span>
+              <span className="block text-xs font-bold text-white">Teacher Mode</span>
+            </div>
+            <span className="sm:hidden text-xs">Teacher</span>
+          </button>
+
           <button
             type="button"
             id="btn-launch-sis"

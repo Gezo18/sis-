@@ -29,11 +29,15 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose, onLoginSuccess, in
   const [program, setProgram] = useState('Computer Science Technology Program');
   const [level, setLevel] = useState('Level 1');
 
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState('');
+
   if (!isOpen) return null;
 
-  const handleSignIn = (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccessMsg(null);
 
     const trimmedInput = loginEmail.trim();
     if (!trimmedInput) {
@@ -41,22 +45,32 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose, onLoginSuccess, in
       return;
     }
 
-    const result = userStore.authenticate(trimmedInput, loginPassword.trim());
-    if (!result.success || !result.user) {
-      setError(result.error || 'Failed to authenticate. Please check your credentials.');
-      return;
-    }
+    setIsLoading(true);
+    setLoadingMsg('Connecting to Supabase and authenticating...');
 
-    setSuccessMsg(`Welcome back, ${result.user.name}!`);
-    setTimeout(() => {
-      onLoginSuccess(result.user!);
-      onClose();
-    }, 400);
+    try {
+      const result = await userStore.authenticate(trimmedInput, loginPassword.trim());
+      if (!result.success || !result.user) {
+        setError(result.error || 'Failed to authenticate. Please check your credentials.');
+        return;
+      }
+
+      setSuccessMsg(`Welcome back, ${result.user.name}!`);
+      setTimeout(() => {
+        onLoginSuccess(result.user!);
+        onClose();
+      }, 400);
+    } catch (err: any) {
+      setError(err?.message || 'Authentication error.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleSignUp = (e: React.FormEvent) => {
+  const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccessMsg(null);
 
     if (!fullName.trim()) {
       setError('Please enter your full name.');
@@ -81,25 +95,34 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose, onLoginSuccess, in
 
     const finalStudentId = studentId.trim() || ('25010' + Math.floor(1000 + Math.random() * 9000));
 
-    const result = userStore.registerStudentAccount({
-      name: fullName,
-      email: trimmedEmail,
-      password: signupPassword,
-      studentId: finalStudentId,
-      program: program,
-      level: level,
-    });
+    setIsLoading(true);
+    setLoadingMsg('Creating your personal account on Supabase...');
 
-    if (!result.success || !result.user) {
-      setError(result.error || 'Registration failed.');
-      return;
+    try {
+      const result = await userStore.registerStudentAccount({
+        name: fullName,
+        email: trimmedEmail,
+        password: signupPassword,
+        studentId: finalStudentId,
+        program: program,
+        level: level,
+      });
+
+      if (!result.success || !result.user) {
+        setError(result.error || 'Registration failed.');
+        return;
+      }
+
+      setSuccessMsg(`Account created on Supabase for ${result.user.name}!`);
+      setTimeout(() => {
+        onLoginSuccess(result.user!);
+        onClose();
+      }, 500);
+    } catch (err: any) {
+      setError(err?.message || 'Registration error.');
+    } finally {
+      setIsLoading(false);
     }
-
-    setSuccessMsg(`Account created successfully for ${result.user.name}!`);
-    setTimeout(() => {
-      onLoginSuccess(result.user!);
-      onClose();
-    }, 700);
   };
 
   return (
@@ -234,11 +257,71 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose, onLoginSuccess, in
 
               <button
                 type="submit"
-                className="w-full bg-[#0c4ca3] hover:bg-[#093d84] text-white py-2.5 rounded-md font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-2xs"
+                disabled={isLoading}
+                className="w-full bg-[#0c4ca3] hover:bg-[#093d84] disabled:bg-gray-400 text-white py-2.5 rounded-md font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-2xs"
               >
-                <span>Log In to Elsewedy SIS</span>
-                <ArrowRight className="w-4 h-4" />
+                {isLoading ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>{loadingMsg || 'Authenticating...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Log In to Elsewedy SIS</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
+
+              <div className="pt-3 border-t border-gray-200">
+                <div className="text-[10px] uppercase font-bold text-gray-400 mb-2">
+                  One-Click Quick Access (Staff & Demo):
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setLoginEmail('hend.fouad@sut.edu.eg');
+                      setLoginPassword('teacher123');
+                      setIsLoading(true);
+                      const res = await userStore.authenticate('hend.fouad@sut.edu.eg', 'teacher123');
+                      setIsLoading(false);
+                      if (res.success && res.user) {
+                        setSuccessMsg(`Welcome, ${res.user.name}!`);
+                        setTimeout(() => {
+                          onLoginSuccess({ ...res.user!, role: 'teacher' });
+                          onClose();
+                        }, 400);
+                      }
+                    }}
+                    className="p-2 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-left text-[11px] cursor-pointer"
+                  >
+                    <div className="font-bold text-amber-950">👨‍🏫 Staff Mode</div>
+                    <div className="text-[10px] text-amber-800">Dr. Hend Fouad</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setLoginEmail('250103180');
+                      setLoginPassword('password123');
+                      setIsLoading(true);
+                      const res = await userStore.authenticate('250103180', 'password123');
+                      setIsLoading(false);
+                      if (res.success && res.user) {
+                        setSuccessMsg(`Welcome, ${res.user.name}!`);
+                        setTimeout(() => {
+                          onLoginSuccess(res.user!);
+                          onClose();
+                        }, 400);
+                      }
+                    }}
+                    className="p-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded text-left text-[11px] cursor-pointer"
+                  >
+                    <div className="font-bold text-blue-950">🎓 Student SIS</div>
+                    <div className="text-[10px] text-blue-800">Ahmed El-Jeziry</div>
+                  </button>
+                </div>
+              </div>
             </form>
           )}
 
@@ -369,10 +452,20 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose, onLoginSuccess, in
 
               <button
                 type="submit"
-                className="w-full bg-[#6fa324] hover:bg-[#5f8e1e] text-white py-2.5 rounded-md font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-2xs mt-2"
+                disabled={isLoading}
+                className="w-full bg-[#6fa324] hover:bg-[#5f8e1e] disabled:bg-gray-400 text-white py-2.5 rounded-md font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-2xs mt-2"
               >
-                <span>Create Student Account & Enter SIS</span>
-                <ArrowRight className="w-4 h-4" />
+                {isLoading ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>{loadingMsg || 'Creating Account on Supabase...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Create Student Account & Enter SIS</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
             </form>
           )}

@@ -12,18 +12,23 @@ interface Props {
   onLoginSuccess: (user: UserAccount) => void;
   onBrowsePublicSite: () => void;
   onOpenDatabaseConfig?: () => void;
+  onSwitchToTeacherLogin?: () => void;
 }
 
 export const LoginPage: React.FC<Props> = ({ 
   onLoginSuccess, 
   onBrowsePublicSite,
   onOpenDatabaseConfig,
+  onSwitchToTeacherLogin,
 }) => {
   const [tab, setTab] = useState<'signin' | 'signup'>('signin');
   const isDbConnected = isSupabaseConfigured();
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState('');
 
   // Sign In fields - blank by default
   const [loginEmail, setLoginEmail] = useState('');
@@ -37,9 +42,10 @@ export const LoginPage: React.FC<Props> = ({
   const [program, setProgram] = useState('Computer Science Technology Program');
   const [level, setLevel] = useState('Level 1');
 
-  const handleSignIn = (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccessMsg(null);
 
     const trimmedInput = loginEmail.trim();
     if (!trimmedInput) {
@@ -47,21 +53,31 @@ export const LoginPage: React.FC<Props> = ({
       return;
     }
 
-    const result = userStore.authenticate(trimmedInput, loginPassword.trim());
-    if (!result.success || !result.user) {
-      setError(result.error || 'Failed to authenticate. Please check your credentials.');
-      return;
-    }
+    setIsLoading(true);
+    setLoadingMsg('Connecting to Supabase and authenticating...');
 
-    setSuccessMsg(`Welcome back, ${result.user.name}!`);
-    setTimeout(() => {
-      onLoginSuccess(result.user!);
-    }, 400);
+    try {
+      const result = await userStore.authenticate(trimmedInput, loginPassword.trim());
+      if (!result.success || !result.user) {
+        setError(result.error || 'Failed to authenticate. Please check your credentials.');
+        return;
+      }
+
+      setSuccessMsg(`Welcome back, ${result.user.name}!`);
+      setTimeout(() => {
+        onLoginSuccess(result.user!);
+      }, 400);
+    } catch (err: any) {
+      setError(err?.message || 'Authentication error.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleSignUp = (e: React.FormEvent) => {
+  const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccessMsg(null);
 
     if (!fullName.trim()) {
       setError('Please enter your full name.');
@@ -81,24 +97,33 @@ export const LoginPage: React.FC<Props> = ({
 
     const finalStudentId = studentId.trim() || ('25010' + Math.floor(1000 + Math.random() * 9000));
 
-    const result = userStore.registerStudentAccount({
-      name: fullName,
-      email: trimmedEmail,
-      password: signupPassword,
-      studentId: finalStudentId,
-      program: program,
-      level: level,
-    });
+    setIsLoading(true);
+    setLoadingMsg('Registering your account and synchronizing with Supabase...');
 
-    if (!result.success || !result.user) {
-      setError(result.error || 'Registration failed.');
-      return;
+    try {
+      const result = await userStore.registerStudentAccount({
+        name: fullName,
+        email: trimmedEmail,
+        password: signupPassword,
+        studentId: finalStudentId,
+        program: program,
+        level: level,
+      });
+
+      if (!result.success || !result.user) {
+        setError(result.error || 'Registration failed.');
+        return;
+      }
+
+      setSuccessMsg(`Student account created successfully on Supabase for ${result.user.name}!`);
+      setTimeout(() => {
+        onLoginSuccess(result.user!);
+      }, 500);
+    } catch (err: any) {
+      setError(err?.message || 'Registration error.');
+    } finally {
+      setIsLoading(false);
     }
-
-    setSuccessMsg(`Student account created successfully for ${result.user.name}!`);
-    setTimeout(() => {
-      onLoginSuccess(result.user!);
-    }, 500);
   };
 
   return (
@@ -112,6 +137,16 @@ export const LoginPage: React.FC<Props> = ({
             <span className="hidden sm:inline">Polytechnic B.Tech Dual-Study Program</span>
           </div>
           <div className="flex items-center gap-3">
+            {onSwitchToTeacherLogin && (
+              <button
+                type="button"
+                onClick={onSwitchToTeacherLogin}
+                className="text-amber-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1 text-[11px] font-bold"
+              >
+                <span>👨‍🏫 Staff Member Login</span>
+              </button>
+            )}
+            <span className="text-gray-600 hidden sm:inline">|</span>
             <button
               type="button"
               onClick={onBrowsePublicSite}
@@ -137,6 +172,16 @@ export const LoginPage: React.FC<Props> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {onSwitchToTeacherLogin && (
+              <button
+                type="button"
+                onClick={onSwitchToTeacherLogin}
+                className="text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 flex items-center gap-1.5 py-1.5 px-3 rounded transition-colors cursor-pointer shadow-2xs"
+              >
+                <span>Staff Member Login →</span>
+              </button>
+            )}
+
             {onOpenDatabaseConfig && (
               <button
                 type="button"
@@ -288,13 +333,23 @@ export const LoginPage: React.FC<Props> = ({
 
                 <button
                   type="submit"
-                  className="w-full bg-[#0c4ca3] hover:bg-[#093d84] text-white py-2.5 rounded-md font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-xs mt-2"
+                  disabled={isLoading}
+                  className="w-full bg-[#0c4ca3] hover:bg-[#093d84] disabled:bg-gray-400 text-white py-2.5 rounded-md font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-xs mt-2"
                 >
-                  <span>Log In to Elsewedy SIS</span>
-                  <ArrowRight className="w-4 h-4" />
+                  {isLoading ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>{loadingMsg || 'Authenticating...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Log In to Elsewedy SIS</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
 
-                <div className="pt-3 border-t border-gray-200">
+                <div className="pt-3 border-t border-gray-200 space-y-2">
                   <div className="flex items-center justify-between text-[11px] text-gray-500">
                     <span>Don't have an account yet?</span>
                     <button
@@ -308,6 +363,19 @@ export const LoginPage: React.FC<Props> = ({
                       Create Student Account →
                     </button>
                   </div>
+
+                  {onSwitchToTeacherLogin && (
+                    <div className="pt-1.5 flex items-center justify-between text-[11px] text-gray-500 border-t border-gray-100">
+                      <span>Faculty or Academic Staff?</span>
+                      <button
+                        type="button"
+                        onClick={onSwitchToTeacherLogin}
+                        className="text-amber-800 hover:text-amber-900 hover:underline font-bold cursor-pointer"
+                      >
+                        Teacher / Staff SIS Login →
+                      </button>
+                    </div>
+                  )}
                 </div>
               </form>
             )}
@@ -423,10 +491,20 @@ export const LoginPage: React.FC<Props> = ({
 
                 <button
                   type="submit"
-                  className="w-full bg-[#6fa324] hover:bg-[#5f8e1e] text-white py-2.5 rounded-md font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-xs"
+                  disabled={isLoading}
+                  className="w-full bg-[#6fa324] hover:bg-[#5f8e1e] disabled:bg-gray-400 text-white py-2.5 rounded-md font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-xs"
                 >
-                  <span>Register & Access SIS Portal</span>
-                  <ArrowRight className="w-4 h-4" />
+                  {isLoading ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>{loadingMsg || 'Creating Account on Supabase...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Register & Access SIS Portal</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
 
                 <div className="text-center pt-2 text-[11px] text-gray-500">
