@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { apmTracker } from './apmTracker';
+import { apmTracker } from './apmTracker.js';
 
 // Configurable Admin Token
 export const ADMIN_AUTH_TOKEN = process.env.HEALTH_ADMIN_TOKEN || 'sut_admin_sec_9aba2480_key';

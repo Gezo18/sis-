@@ -68,7 +68,7 @@ jobs:
       - name: Start Full-Stack Application
         run: |
           npm run build
-          NODE_ENV=production node server.ts &
+          NODE_ENV=production npx tsx server.ts &
           # Wait for server to become responsive
           sleep 4
         env:

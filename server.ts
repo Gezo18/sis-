@@ -9,17 +9,17 @@ import {
   authRateLimiter,
   healthRateLimiter,
   createRateLimiterMiddleware,
-} from './src/server/rateLimiter';
-import { apmTracker } from './src/server/apmTracker';
-import { DeepHealthCheckService } from './src/server/dbHealthService';
+} from './src/server/rateLimiter.js';
+import { apmTracker } from './src/server/apmTracker.js';
+import { DeepHealthCheckService } from './src/server/dbHealthService.js';
 import {
   requireAdminAuth,
   enforceRowLevelSecurity,
   applySecurityHeaders,
   globalErrorMiddleware,
   ADMIN_AUTH_TOKEN,
-} from './src/server/securityMiddleware';
-import { SECURE_POOL_CONFIG, validateParameterizedQuery } from './src/server/dbSecurity';
+} from './src/server/securityMiddleware.js';
+import { SECURE_POOL_CONFIG, validateParameterizedQuery } from './src/server/dbSecurity.js';
 
 dotenv.config();
 
