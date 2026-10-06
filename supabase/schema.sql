@@ -1,13 +1,16 @@
 -- ==============================================================================
 -- ELSEWEDY UNIVERSITY OF TECHNOLOGY (SUT) - SUPABASE POSTGRESQL SCHEMA
--- Fully Idempotent RLS Policies with Teachers & Admins Table Security
+-- Fully Idempotent Schema with Strict Integrity Constraints, High-Performance
+-- Composite Indexes, and Fine-Grained Row-Level Security (RLS) Policies
 -- ==============================================================================
+
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- 1. Create Admins Table
 CREATE TABLE IF NOT EXISTS public.admins (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
-    email VARCHAR(255),
+    email VARCHAR(255) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -39,13 +42,13 @@ CREATE TABLE IF NOT EXISTS public.students (
     program VARCHAR(255) DEFAULT 'Computer Science Technology (Dual Study)',
     enrollment_date DATE DEFAULT CURRENT_DATE,
     status VARCHAR(32) DEFAULT 'active',
-    cgpa NUMERIC(3, 2) DEFAULT 0.00,
-    accum_ch INTEGER DEFAULT 0,
+    cgpa NUMERIC(3, 2) DEFAULT 0.00 CONSTRAINT check_students_cgpa CHECK (cgpa >= 0.00 AND cgpa <= 4.00),
+    accum_ch INTEGER DEFAULT 0 CONSTRAINT check_students_accum_ch CHECK (accum_ch >= 0),
     academic_status VARCHAR(64) DEFAULT 'Good Standing',
-    academic_warnings INTEGER DEFAULT 0,
-    registered_ch INTEGER DEFAULT 0,
-    total_passed_ch INTEGER DEFAULT 0,
-    level INTEGER DEFAULT 1,
+    academic_warnings INTEGER DEFAULT 0 CONSTRAINT check_students_academic_warnings CHECK (academic_warnings >= 0 AND academic_warnings <= 5),
+    registered_ch INTEGER DEFAULT 0 CONSTRAINT check_students_registered_ch CHECK (registered_ch >= 0),
+    total_passed_ch INTEGER DEFAULT 0 CONSTRAINT check_students_passed_ch CHECK (total_passed_ch >= 0),
+    level INTEGER DEFAULT 1 CONSTRAINT check_students_level CHECK (level >= 1 AND level <= 5),
     student_program VARCHAR(255) DEFAULT 'Computer Science Technology (Dual Study)',
     faculty_department VARCHAR(255) DEFAULT 'Faculty of Information Technology',
     advisor_name VARCHAR(255) DEFAULT 'Dr. Tarek Abdel-Azim',
@@ -61,14 +64,14 @@ CREATE TABLE IF NOT EXISTS public.courses (
     course_code VARCHAR(32) GENERATED ALWAYS AS (code) STORED,
     name VARCHAR(255) NOT NULL,
     title VARCHAR(255) GENERATED ALWAYS AS (name) STORED,
-    credits INTEGER DEFAULT 3,
+    credits INTEGER DEFAULT 3 CONSTRAINT check_courses_credits CHECK (credits >= 0 AND credits <= 12),
     credit_hours INTEGER GENERATED ALWAYS AS (credits) STORED,
-    lecture_hours INTEGER DEFAULT 2,
-    lab_hours INTEGER DEFAULT 2,
+    lecture_hours INTEGER DEFAULT 2 CONSTRAINT check_courses_lec CHECK (lecture_hours >= 0),
+    lab_hours INTEGER DEFAULT 2 CONSTRAINT check_courses_lab CHECK (lab_hours >= 0),
     teacher_id UUID REFERENCES public.teachers(id) ON DELETE SET NULL,
     department VARCHAR(128) DEFAULT 'Computer Science Technology',
-    level INTEGER DEFAULT 1,
-    semester INTEGER DEFAULT 1,
+    level INTEGER DEFAULT 1 CONSTRAINT check_courses_level CHECK (level >= 1 AND level <= 5),
+    semester INTEGER DEFAULT 1 CONSTRAINT check_courses_semester CHECK (semester >= 1 AND semester <= 10),
     prerequisites TEXT[] DEFAULT '{}',
     description TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
@@ -84,7 +87,7 @@ CREATE TABLE IF NOT EXISTS public.enrollments (
     status VARCHAR(32) DEFAULT 'enrolled',
     enrolled_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     grade VARCHAR(8),
-    points NUMERIC(3, 2),
+    points NUMERIC(3, 2) CONSTRAINT check_enrollments_points CHECK (points IS NULL OR (points >= 0.00 AND points <= 4.00)),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     UNIQUE (student_id, course_id, semester)
 );
@@ -97,7 +100,8 @@ CREATE TABLE IF NOT EXISTS public.grades (
     score NUMERIC(5, 2) NOT NULL,
     max_score NUMERIC(5, 2) DEFAULT 100.0,
     feedback TEXT,
-    graded_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+    graded_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT check_grades_score CHECK (score >= 0.00 AND max_score > 0.00 AND score <= max_score)
 );
 
 -- 7. Create Attendance Records
@@ -105,10 +109,10 @@ CREATE TABLE IF NOT EXISTS public.attendance_records (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     student_id UUID REFERENCES public.students(id) ON DELETE CASCADE,
     course_id UUID REFERENCES public.courses(id) ON DELETE CASCADE,
-    total_sessions INTEGER DEFAULT 14,
-    attended_sessions INTEGER DEFAULT 14,
-    absent_sessions INTEGER DEFAULT 0,
-    percentage NUMERIC(5, 2) DEFAULT 100.0,
+    total_sessions INTEGER DEFAULT 14 CONSTRAINT check_attendance_total CHECK (total_sessions >= 0),
+    attended_sessions INTEGER DEFAULT 14 CONSTRAINT check_attendance_attended CHECK (attended_sessions >= 0),
+    absent_sessions INTEGER DEFAULT 0 CONSTRAINT check_attendance_absent CHECK (absent_sessions >= 0),
+    percentage NUMERIC(5, 2) DEFAULT 100.0 CONSTRAINT check_attendance_pct CHECK (percentage >= 0.00 AND percentage <= 100.00),
     warning_status VARCHAR(32) DEFAULT 'Normal',
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     UNIQUE (student_id, course_id)
@@ -136,6 +140,33 @@ CREATE TABLE IF NOT EXISTS public.advisor_notes (
     note TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- ------------------------------------------------------------------------------
+-- FOREIGN KEY & COMPOSITE INDEXES FOR HIGH-PERFORMANCE QUERYING
+-- ------------------------------------------------------------------------------
+
+-- Foreign key indexes
+CREATE INDEX IF NOT EXISTS idx_admins_user_id ON public.admins (user_id);
+CREATE INDEX IF NOT EXISTS idx_teachers_user_id ON public.teachers (user_id);
+CREATE INDEX IF NOT EXISTS idx_courses_teacher_id ON public.courses (teacher_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_student_id ON public.enrollments (student_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_course_id ON public.enrollments (course_id);
+CREATE INDEX IF NOT EXISTS idx_grades_enrollment_id ON public.grades (enrollment_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_student_id ON public.attendance_records (student_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_course_id ON public.attendance_records (course_id);
+CREATE INDEX IF NOT EXISTS idx_requests_student_id ON public.student_requests (student_id);
+CREATE INDEX IF NOT EXISTS idx_advisor_notes_student_id ON public.advisor_notes (student_id);
+
+-- Composite indexes
+CREATE INDEX IF NOT EXISTS idx_students_search_name_email ON public.students (last_name, first_name, email);
+CREATE INDEX IF NOT EXISTS idx_students_status_level ON public.students (status, level, faculty_department);
+CREATE INDEX IF NOT EXISTS idx_courses_dept_level_sem ON public.courses (department, level, semester);
+CREATE INDEX IF NOT EXISTS idx_enrollments_student_semester ON public.enrollments (student_id, semester, status);
+CREATE INDEX IF NOT EXISTS idx_enrollments_course_semester ON public.enrollments (course_id, semester, status);
+CREATE INDEX IF NOT EXISTS idx_grades_enrollment_graded ON public.grades (enrollment_id, graded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_attendance_warning_status ON public.attendance_records (warning_status, percentage);
+CREATE INDEX IF NOT EXISTS idx_requests_student_created ON public.student_requests (student_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_advisor_notes_student_created ON public.advisor_notes (student_id, created_at DESC);
 
 -- Enable Row Level Security (RLS) on all tables
 ALTER TABLE public.admins ENABLE ROW LEVEL SECURITY;
@@ -173,18 +204,16 @@ AS $$
 $$;
 
 -- ═══════════════════════════════════════════════
--- RLS Policies (Idempotent: safe to re-run anytime)
+-- RLS Policies (Idempotent)
 -- ═══════════════════════════════════════════════
 
--- ── Admins ────────────────────────────────────
+-- Admins
 DROP POLICY IF EXISTS "Admins: full access for admins" ON public.admins;
 CREATE POLICY "Admins: full access for admins"
   ON public.admins FOR ALL TO authenticated
   USING (public.is_admin()) WITH CHECK (public.is_admin());
 
--- ── Students ──────────────────────────────────
--- Teachers can only INSERT and SELECT students (they cannot delete or update)
--- Admins have full access
+-- Students
 DROP POLICY IF EXISTS "Students: select for authenticated"   ON public.students;
 DROP POLICY IF EXISTS "Students: insert for teachers and admins" ON public.students;
 DROP POLICY IF EXISTS "Students: update for admins only"     ON public.students;
@@ -206,8 +235,7 @@ CREATE POLICY "Students: delete for admins only"
   ON public.students FOR DELETE TO authenticated
   USING (public.is_admin());
 
--- ── Teachers ──────────────────────────────────
--- Teachers can only see all and update their own profile; admins have full access
+-- Teachers
 DROP POLICY IF EXISTS "Teachers: select for authenticated"   ON public.teachers;
 DROP POLICY IF EXISTS "Teachers: insert for admins"          ON public.teachers;
 DROP POLICY IF EXISTS "Teachers: update own profile or admin" ON public.teachers;
@@ -230,8 +258,7 @@ CREATE POLICY "Teachers: delete for admins only"
   ON public.teachers FOR DELETE TO authenticated
   USING (public.is_admin());
 
--- ── Courses ───────────────────────────────────
--- Teachers manage own courses; admins have full access
+-- Courses
 DROP POLICY IF EXISTS "Courses: select for authenticated"    ON public.courses;
 DROP POLICY IF EXISTS "Courses: insert for teachers and admins" ON public.courses;
 DROP POLICY IF EXISTS "Courses: update for teacher or admin" ON public.courses;
@@ -254,8 +281,7 @@ CREATE POLICY "Courses: delete for teacher or admin"
   ON public.courses FOR DELETE TO authenticated
   USING (public.is_admin() OR teacher_id = public.current_teacher_id());
 
--- ── Enrollments ───────────────────────────────
--- Teachers manage enrollments for their own courses; admins have full access
+-- Enrollments
 DROP POLICY IF EXISTS "Enrollments: select for authenticated" ON public.enrollments;
 DROP POLICY IF EXISTS "Enrollments: insert for own course or admin" ON public.enrollments;
 DROP POLICY IF EXISTS "Enrollments: update for own course or admin" ON public.enrollments;
@@ -290,8 +316,7 @@ CREATE POLICY "Enrollments: delete for own course or admin"
     course_id IN (SELECT id FROM public.courses WHERE teacher_id = public.current_teacher_id())
   );
 
--- ── Grades ────────────────────────────────────
--- Teachers can only manage grades for their own courses; admins have full access
+-- Grades
 DROP POLICY IF EXISTS "Grades: select for authenticated"       ON public.grades;
 DROP POLICY IF EXISTS "Grades: teacher inserts for own courses" ON public.grades;
 DROP POLICY IF EXISTS "Grades: teacher updates for own courses" ON public.grades;
@@ -342,7 +367,7 @@ CREATE POLICY "Grades: teacher deletes for own courses"
     )
   );
 
--- ── Attendance & Requests & Notes ─────────────
+-- Attendance, Requests & Notes
 DROP POLICY IF EXISTS "Attendance: manage for teacher and admin" ON public.attendance_records;
 DROP POLICY IF EXISTS "Requests: manage for teacher and admin" ON public.student_requests;
 DROP POLICY IF EXISTS "Advisor notes: manage for teacher and admin" ON public.advisor_notes;

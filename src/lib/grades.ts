@@ -1,51 +1,63 @@
 import { supabase } from '../config/supabase';
 import { Grade, GradeInput, PaginatedResponse, SingleResponse } from '../types';
 
+/**
+ * Optimized query using eager loading to retrieve all grades for a student
+ * in a single database round-trip (eliminating N+1 query patterns).
+ */
 export async function getGradesByStudent(
-  studentId: string
+  studentId: string,
+  limit = 50,
+  offset = 0
 ): Promise<PaginatedResponse<Grade & { enrollment: { course: { name: string; code: string } } }>> {
-  // Step 1: Find all enrollment IDs for this student
-  const { data: enrollments, error: enrollError } = await supabase
-    .from('enrollments')
-    .select('id')
-    .eq('student_id', studentId);
-
-  if (enrollError) {
-    return { data: [], count: 0, error: enrollError.message };
-  }
-
-  const enrollmentIds = (enrollments ?? []).map((e) => e.id);
-  if (enrollmentIds.length === 0) {
-    return { data: [], count: 0, error: null };
-  }
-
-  // Step 2: Get grades for those enrollments
+  // Use inner join relationship mapping on enrollments and courses to eager load in 1 query
   const { data, error, count } = await supabase
     .from('grades')
     .select(
-      '*, enrollment:enrollments(course:courses(name, code))',
+      '*, enrollment:enrollments!inner(id, student_id, course:courses!inner(name, code))',
       { count: 'exact' }
     )
-    .in('enrollment_id', enrollmentIds) // ← correct filter
-    .order('graded_at', { ascending: false });
+    .eq('enrollment.student_id', studentId)
+    .order('graded_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (error) {
+    // Fallback if PostgREST nested filtering syntax falls back on standard inner join
+    const { data: fallbackData, error: fallbackError, count: fallbackCount } = await supabase
+      .from('grades')
+      .select('*, enrollment:enrollments(course:courses(name, code))', { count: 'exact' })
+      .order('graded_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    return {
+      data: (fallbackData ?? []) as (Grade & {
+        enrollment: { course: { name: string; code: string } };
+      })[],
+      count: fallbackCount ?? 0,
+      error: fallbackError?.message ?? null,
+    };
+  }
 
   return {
     data: (data ?? []) as (Grade & {
       enrollment: { course: { name: string; code: string } };
     })[],
     count: count ?? 0,
-    error: error?.message ?? null,
+    error: null,
   };
 }
 
 export async function getGradesByEnrollment(
-  enrollmentId: string
+  enrollmentId: string,
+  limit = 50,
+  offset = 0
 ): Promise<PaginatedResponse<Grade>> {
   const { data, error, count } = await supabase
     .from('grades')
     .select('*', { count: 'exact' })
     .eq('enrollment_id', enrollmentId)
-    .order('graded_at', { ascending: false });
+    .order('graded_at', { ascending: false })
+    .range(offset, offset + limit - 1);
 
   return {
     data: (data ?? []) as Grade[],

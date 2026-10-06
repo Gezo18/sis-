@@ -7,12 +7,14 @@ function sanitizeForPostgREST(input: string): string {
 
 export async function getStudents(
   limit = 50,
-  offset = 0
+  offset = 0,
+  sortBy: 'last_name' | 'created_at' | 'cgpa' = 'last_name',
+  ascending = true
 ): Promise<PaginatedResponse<Student>> {
   const { data, error, count } = await supabase
     .from('students')
     .select('*', { count: 'exact' })
-    .order('last_name')
+    .order(sortBy, { ascending })
     .range(offset, offset + limit - 1);
 
   return {
@@ -35,15 +37,20 @@ export async function getStudentById(id: string): Promise<SingleResponse<Student
   };
 }
 
-export async function searchStudents(query: string): Promise<PaginatedResponse<Student>> {
+export async function searchStudents(
+  query: string,
+  limit = 50,
+  offset = 0
+): Promise<PaginatedResponse<Student>> {
   const safe = sanitizeForPostgREST(query);
   if (!safe) return { data: [], count: 0, error: null };
 
   const { data, error, count } = await supabase
     .from('students')
     .select('*', { count: 'exact' })
-    .or(`first_name.ilike.%${safe}%,last_name.ilike.%${safe}%,email.ilike.%${safe}%`)
-    .order('last_name');
+    .or(`first_name.ilike.%${safe}%,last_name.ilike.%${safe}%,email.ilike.%${safe}%,student_id.ilike.%${safe}%`)
+    .order('last_name')
+    .range(offset, offset + limit - 1);
 
   return {
     data: (data ?? []) as Student[],
