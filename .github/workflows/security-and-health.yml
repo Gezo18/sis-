@@ -20,10 +20,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-       
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Install Dependencies
-        run: npm ci
+        run: bun install
 
       - name: Automated Dependency Vulnerability Scan (npm audit)
         run: |
@@ -43,10 +45,10 @@ jobs:
           fi
 
       - name: TypeScript & Lint Verification
-        run: npm run lint
+        run: bun run lint
 
       - name: Application Production Build
-        run: npm run build
+        run: bun run build
 
   dynamic-crawler-and-e2e:
     name: Dynamic Site Crawler & Health Telemetry
@@ -60,14 +62,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-  
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Install Dependencies
-        run: npm ci
+        run: bun install
 
       - name: Start Full-Stack Application
         run: |
-          npm run build
+          bun run build
           NODE_ENV=production node server.ts &
           # Wait for server to become responsive
           sleep 4
@@ -85,7 +89,7 @@ jobs:
           echo "Verifying admin-authenticated deep health endpoint..."
           # Unauthenticated must be blocked (HTTP 401)
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/health/deep)
-          if [ "$HTTP_CODE" -ne 401 ] && [ "$HTTP_CODE" -ne 403 ]; then
+          if [ "\(HTTP_CODE" -ne 401 ] && [ "\)HTTP_CODE" -ne 403 ]; then
             echo "❌ Expected 401/403 for unauthenticated deep health check, got $HTTP_CODE"
             exit 1
           fi
@@ -108,4 +112,3 @@ jobs:
         env:
           TEST_BASE_URL: http://localhost:3000
           HEALTH_ADMIN_TOKEN: sut_admin_sec_9aba2480_key
-
