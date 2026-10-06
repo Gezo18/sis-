@@ -3,11 +3,18 @@ import { Teacher, TeacherInput, PaginatedResponse, SingleResponse } from '../typ
 
 export async function getTeachers(
   limit = 50,
-  offset = 0
+  offset = 0,
+  department?: string
 ): Promise<PaginatedResponse<Teacher>> {
-  const { data, error, count } = await supabase
+  let query = supabase
     .from('teachers')
-    .select('*', { count: 'exact' })
+    .select('*, courses:courses(id, code, name, credits)', { count: 'exact' });
+
+  if (department) {
+    query = query.eq('department', department);
+  }
+
+  const { data, error, count } = await query
     .order('last_name')
     .range(offset, offset + limit - 1);
 
@@ -21,7 +28,7 @@ export async function getTeachers(
 export async function getTeacherById(id: string): Promise<SingleResponse<Teacher>> {
   const { data, error } = await supabase
     .from('teachers')
-    .select('*')
+    .select('*, courses:courses(id, code, name, credits)')
     .eq('id', id)
     .single();
 

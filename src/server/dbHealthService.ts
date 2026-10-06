@@ -1,4 +1,4 @@
-import { apmTracker } from './apmTracker';
+import { apmTracker } from './apmTracker.js';
 
 export interface ComponentHealth {
   status: 'healthy' | 'degraded' | 'unhealthy';

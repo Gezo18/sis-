@@ -8,7 +8,6 @@ import { AuthModal } from './components/auth/AuthModal';
 import { LoginPage } from './components/auth/LoginPage';
 import { TeacherLoginPage } from './components/auth/TeacherLoginPage';
 import { DatabaseConfigModal } from './components/common/DatabaseConfigModal';
-import { isSupabaseConfigured } from './lib/supabase';
 
 // Faculty Advisor Console
 import { TeacherDashboard } from './components/teacher/TeacherDashboard';
@@ -35,7 +34,7 @@ import { CampusNewsSection } from './components/university/CampusNewsSection';
 import { AboutSection } from './components/university/AboutSection';
 import { UniversityFooter } from './components/university/UniversityFooter';
 
-import { UserCheck, UserPlus, LogIn, GraduationCap, ShieldCheck, ArrowLeft, Activity } from 'lucide-react';
+import { LogIn, ShieldCheck, ArrowLeft, Activity } from 'lucide-react';
 import { DeepHealthSecurityConsole } from './components/health/DeepHealthSecurityConsole';
 
 export default function App() {
@@ -185,7 +184,7 @@ export default function App() {
     setIsAuthOpen(true);
   };
 
-  const handleOpenSisToRegister = (courseCode: string) => {
+  const handleOpenSisToRegister = () => {
     setActiveSisView('req-register-add-drop');
     setAppMode('sis');
   };
@@ -234,6 +233,13 @@ export default function App() {
           onClose={() => setIsDbModalOpen(false)}
           onConnectionChanged={refreshUserData}
         />
+        {isHealthConsoleOpen && (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+            <div className="max-w-5xl w-full my-8">
+              <DeepHealthSecurityConsole onClose={() => setIsHealthConsoleOpen(false)} />
+            </div>
+          </div>
+        )}
       </div>
     );
   }
