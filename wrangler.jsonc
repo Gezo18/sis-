@@ -1,7 +1,10 @@
 {
   "name": "sis",
-  "compatibility_date": "2025-01-01",
+  "compatibility_date": "2024-09-23",
   "assets": {
     "directory": "./dist"
+  },
+  "build": {
+    "command": "npm run build"
   }
 }
