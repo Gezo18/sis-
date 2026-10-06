@@ -35,9 +35,9 @@ jobs:
       - name: Static Secret Scanning
         run: |
           echo "Scanning codebase for hardcoded secrets, connection strings, and private keys..."
-          # Regex search for sensitive patterns excluding git/node_modules/dist
+          # Regex search for sensitive patterns excluding git, github workflows, node_modules, and build outputs
           SECRET_PATTERNS="(postgres:\/\/[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+@|BEGIN PRIVATE KEY|AKIA[0-9A-Z]{16}|ghp_[a-zA-Z0-9]{36}|AIza[0-9A-Za-z\\-_]{35})"
-          if grep -rnEI "$SECRET_PATTERNS" --exclude-dir={.git,node_modules,dist,.playwright} --exclude="*.example" .; then
+          if grep -rnEI "$SECRET_PATTERNS" --exclude-dir={.git,.github,node_modules,dist,.playwright} --exclude="*.example" .; then
             echo "❌ CRITICAL: Potential secret or hardcoded database connection string found!"
             exit 1
           else
