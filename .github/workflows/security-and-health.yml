@@ -72,9 +72,9 @@ jobs:
       - name: Start Full-Stack Application
         run: |
           bun run build
-          NODE_ENV=production node server.ts &
-          # Wait for server to become responsive
-          sleep 4
+          NODE_ENV=production npx tsx server.ts &
+          # Wait for server to boot up completely
+          sleep 10
         env:
           PORT: 3000
           HEALTH_ADMIN_TOKEN: sut_admin_sec_9aba2480_key
