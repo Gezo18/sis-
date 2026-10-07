@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { initialStudentProfile } from './data/mockData';
 import { StudentProfile, UserAccount } from './types';
 import { userStore } from './data/userStore';
@@ -9,33 +9,47 @@ import { LoginPage } from './components/auth/LoginPage';
 import { TeacherLoginPage } from './components/auth/TeacherLoginPage';
 import { DatabaseConfigModal } from './components/common/DatabaseConfigModal';
 
-// Faculty Advisor Console
-import { TeacherDashboard } from './components/teacher/TeacherDashboard';
+// Faculty Advisor Console (Lazy loaded to reduce initial bundle size)
+const TeacherDashboard = lazy(() => import('./components/teacher/TeacherDashboard').then(m => ({ default: m.TeacherDashboard })));
 
 // SIS Components
 import { SisTopBar } from './components/sis/SisTopBar';
 import { SisSidebar, SisView } from './components/sis/SisSidebar';
 import { SisHomePage } from './components/sis/SisHomePage';
-import { SisAcademicPlan } from './components/sis/SisAcademicPlan';
-import { SisAttendance } from './components/sis/SisAttendance';
-import { SisActivityMarks } from './components/sis/SisActivityMarks';
-import { SisExamSchedule } from './components/sis/SisExamSchedule';
-import { SisRequests } from './components/sis/SisRequests';
-import { SisStaff } from './components/sis/SisStaff';
-import { SisReports } from './components/sis/SisReports';
 import { SisFooter } from './components/sis/SisFooter';
+
+// Lazy loaded SIS subviews
+const SisAcademicPlan = lazy(() => import('./components/sis/SisAcademicPlan').then(m => ({ default: m.SisAcademicPlan })));
+const SisAttendance = lazy(() => import('./components/sis/SisAttendance').then(m => ({ default: m.SisAttendance })));
+const SisActivityMarks = lazy(() => import('./components/sis/SisActivityMarks').then(m => ({ default: m.SisActivityMarks })));
+const SisExamSchedule = lazy(() => import('./components/sis/SisExamSchedule').then(m => ({ default: m.SisExamSchedule })));
+const SisRequests = lazy(() => import('./components/sis/SisRequests').then(m => ({ default: m.SisRequests })));
+const SisStaff = lazy(() => import('./components/sis/SisStaff').then(m => ({ default: m.SisStaff })));
+const SisReports = lazy(() => import('./components/sis/SisReports').then(m => ({ default: m.SisReports })));
 
 // University Public Components
 import { UniversityNavbar } from './components/university/UniversityNavbar';
 import { CampusHome } from './components/university/CampusHome';
-import { CourseCatalog } from './components/university/CourseCatalog';
-import { EventCalendar } from './components/university/EventCalendar';
-import { CampusNewsSection } from './components/university/CampusNewsSection';
-import { AboutSection } from './components/university/AboutSection';
 import { UniversityFooter } from './components/university/UniversityFooter';
 
+// Lazy loaded Portal subviews
+const CourseCatalog = lazy(() => import('./components/university/CourseCatalog').then(m => ({ default: m.CourseCatalog })));
+const EventCalendar = lazy(() => import('./components/university/EventCalendar').then(m => ({ default: m.EventCalendar })));
+const CampusNewsSection = lazy(() => import('./components/university/CampusNewsSection').then(m => ({ default: m.CampusNewsSection })));
+const AboutSection = lazy(() => import('./components/university/AboutSection').then(m => ({ default: m.AboutSection })));
+
 import { LogIn, ShieldCheck, ArrowLeft, Activity } from 'lucide-react';
-import { DeepHealthSecurityConsole } from './components/health/DeepHealthSecurityConsole';
+const DeepHealthSecurityConsole = lazy(() => import('./components/health/DeepHealthSecurityConsole').then(m => ({ default: m.DeepHealthSecurityConsole })));
+
+// Fallback spinner component during lazy view loading
+const ViewLoadingFallback = () => (
+  <div className="flex items-center justify-center p-12 min-h-[300px]">
+    <div className="flex flex-col items-center gap-3 text-gray-500">
+      <div className="w-8 h-8 border-4 border-[#0c4ca3] border-t-transparent rounded-full animate-spin"></div>
+      <span className="text-xs font-semibold">Loading module...</span>
+    </div>
+  </div>
+);
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => userStore.getCurrentUser());
@@ -236,7 +250,9 @@ export default function App() {
         {isHealthConsoleOpen && (
           <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
             <div className="max-w-5xl w-full my-8">
-              <DeepHealthSecurityConsole onClose={() => setIsHealthConsoleOpen(false)} />
+              <Suspense fallback={<ViewLoadingFallback />}>
+                <DeepHealthSecurityConsole onClose={() => setIsHealthConsoleOpen(false)} />
+              </Suspense>
             </div>
           </div>
         )}
@@ -341,31 +357,33 @@ export default function App() {
 
       {/* RENDER MODE: FACULTY & ADVISOR CONSOLE */}
       {appMode === 'teacher' && (
-        <TeacherDashboard
-          currentUser={
-            currentUser?.role === 'teacher'
-              ? currentUser
-              : (userStore.getUsers().find(u => u.id === 'usr_teacher_hend') || {
-                  id: 'usr_teacher_hend',
-                  email: 'hend.fouad@sut.edu.eg',
-                  role: 'teacher',
-                  name: 'Dr. Hend Adel Ahmed Fouad',
-                  academicTitle: 'Assistant Professor & Academic Advisor',
-                  teacherProfile: userStore.getUsers().find(u => u.id === 'usr_teacher_hend')?.teacherProfile,
-                  createdAt: new Date().toISOString(),
-                })
-          }
-          onLogout={handleTeacherLogout}
-          onSwitchToPortal={() => setAppMode('portal')}
-          onSwitchToStudentView={(selectedStudentUser) => {
-            if (selectedStudentUser.studentProfile) {
-              setStudent(selectedStudentUser.studentProfile);
+        <Suspense fallback={<ViewLoadingFallback />}>
+          <TeacherDashboard
+            currentUser={
+              currentUser?.role === 'teacher'
+                ? currentUser
+                : (userStore.getUsers().find(u => u.id === 'usr_teacher_hend') || {
+                    id: 'usr_teacher_hend',
+                    email: 'hend.fouad@sut.edu.eg',
+                    role: 'teacher',
+                    name: 'Dr. Hend Adel Ahmed Fouad',
+                    academicTitle: 'Assistant Professor & Academic Advisor',
+                    teacherProfile: userStore.getUsers().find(u => u.id === 'usr_teacher_hend')?.teacherProfile,
+                    createdAt: new Date().toISOString(),
+                  })
             }
-            setInspectedStudent(selectedStudentUser);
-            setAppMode('sis');
-            setActiveSisView('home');
-          }}
-        />
+            onLogout={handleTeacherLogout}
+            onSwitchToPortal={() => setAppMode('portal')}
+            onSwitchToStudentView={(selectedStudentUser) => {
+              if (selectedStudentUser.studentProfile) {
+                setStudent(selectedStudentUser.studentProfile);
+              }
+              setInspectedStudent(selectedStudentUser);
+              setAppMode('sis');
+              setActiveSisView('home');
+            }}
+          />
+        </Suspense>
       )}
 
       {/* RENDER MODE: SIS STUDENT INFORMATION SYSTEM */}
@@ -418,60 +436,62 @@ export default function App() {
             />
 
             <main className="flex-1 overflow-x-auto">
-              {activeSisView === 'home' && (
-                <SisHomePage
-                  student={student}
-                  onNavigate={(view) => setActiveSisView(view)}
-                />
-              )}
+              <Suspense fallback={<ViewLoadingFallback />}>
+                {activeSisView === 'home' && (
+                  <SisHomePage
+                    student={student}
+                    onNavigate={(view) => setActiveSisView(view)}
+                  />
+                )}
 
-              {activeSisView === 'academic-plan' && (
-                <SisAcademicPlan
-                  student={student}
-                  currentUser={activeStudentAccount}
-                  onDataUpdated={refreshUserData}
-                />
-              )}
+                {activeSisView === 'academic-plan' && (
+                  <SisAcademicPlan
+                    student={student}
+                    currentUser={activeStudentAccount}
+                    onDataUpdated={refreshUserData}
+                  />
+                )}
 
-              {activeSisView === 'attendance' && (
-                <SisAttendance
-                  student={student}
-                  currentUser={activeStudentAccount}
-                  onDataUpdated={refreshUserData}
-                />
-              )}
+                {activeSisView === 'attendance' && (
+                  <SisAttendance
+                    student={student}
+                    currentUser={activeStudentAccount}
+                    onDataUpdated={refreshUserData}
+                  />
+                )}
 
-              {activeSisView === 'activity-marks' && (
-                <SisActivityMarks
-                  student={student}
-                  currentUser={activeStudentAccount}
-                />
-              )}
+                {activeSisView === 'activity-marks' && (
+                  <SisActivityMarks
+                    student={student}
+                    currentUser={activeStudentAccount}
+                  />
+                )}
 
-              {activeSisView === 'exam-schedule' && (
-                <SisExamSchedule student={student} />
-              )}
+                {activeSisView === 'exam-schedule' && (
+                  <SisExamSchedule student={student} />
+                )}
 
-              {activeSisView.startsWith('req-') && (
-                <SisRequests
-                  student={student}
-                  currentUser={activeStudentAccount}
-                  activeRequestView={activeSisView}
-                  onNavigate={(view) => setActiveSisView(view)}
-                  onDataUpdated={refreshUserData}
-                />
-              )}
+                {activeSisView.startsWith('req-') && (
+                  <SisRequests
+                    student={student}
+                    currentUser={activeStudentAccount}
+                    activeRequestView={activeSisView}
+                    onNavigate={(view) => setActiveSisView(view)}
+                    onDataUpdated={refreshUserData}
+                  />
+                )}
 
-              {activeSisView === 'staff' && (
-                <SisStaff student={student} />
-              )}
+                {activeSisView === 'staff' && (
+                  <SisStaff student={student} />
+                )}
 
-              {activeSisView === 'reports' && (
-                <SisReports
-                  student={student}
-                  currentUser={activeStudentAccount}
-                />
-              )}
+                {activeSisView === 'reports' && (
+                  <SisReports
+                    student={student}
+                    currentUser={activeStudentAccount}
+                  />
+                )}
+              </Suspense>
             </main>
           </div>
 
@@ -493,29 +513,31 @@ export default function App() {
           />
 
           <main className="flex-1">
-            {activeUniTab === 'home' && (
-              <CampusHome
-                student={student}
-                onOpenSis={() => setAppMode('sis')}
-                onSelectTab={(tab) => setActiveUniTab(tab)}
-              />
-            )}
+            <Suspense fallback={<ViewLoadingFallback />}>
+              {activeUniTab === 'home' && (
+                <CampusHome
+                  student={student}
+                  onOpenSis={() => setAppMode('sis')}
+                  onSelectTab={(tab) => setActiveUniTab(tab)}
+                />
+              )}
 
-            {activeUniTab === 'catalog' && (
-              <CourseCatalog onOpenSisToRegister={handleOpenSisToRegister} />
-            )}
+              {activeUniTab === 'catalog' && (
+                <CourseCatalog onOpenSisToRegister={handleOpenSisToRegister} />
+              )}
 
-            {activeUniTab === 'events' && (
-              <EventCalendar />
-            )}
+              {activeUniTab === 'events' && (
+                <EventCalendar />
+              )}
 
-            {activeUniTab === 'news' && (
-              <CampusNewsSection />
-            )}
+              {activeUniTab === 'news' && (
+                <CampusNewsSection />
+              )}
 
-            {activeUniTab === 'about' && (
-              <AboutSection />
-            )}
+              {activeUniTab === 'about' && (
+                <AboutSection />
+              )}
+            </Suspense>
           </main>
 
           <UniversityFooter
@@ -544,7 +566,9 @@ export default function App() {
       {isHealthConsoleOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
           <div className="max-w-5xl w-full my-8">
-            <DeepHealthSecurityConsole onClose={() => setIsHealthConsoleOpen(false)} />
+            <Suspense fallback={<ViewLoadingFallback />}>
+              <DeepHealthSecurityConsole onClose={() => setIsHealthConsoleOpen(false)} />
+            </Suspense>
           </div>
         </div>
       )}

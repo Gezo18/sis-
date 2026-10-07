@@ -1,0 +1,3 @@
+## 2026-10-07 - React.lazy Named Exports and Deep Clone Overheads in In-Memory Stores
+**Learning:** Monolithic initial JS bundles (>800 kB) can be drastically reduced (>30% initial bundle drop) by dynamically importing non-critical route views (`TeacherDashboard`, health console, catalog) via `React.lazy(() => import(...).then(m => ({ default: m.NamedExport })))`. Additionally, replacing `JSON.parse(JSON.stringify(array.map(...)))` with direct map object spreading avoids unnecessary JSON stringify/parse allocations during store initialization.
+**Action:** Always check Vite bundle chunk warnings for dynamic import opportunities and eliminate redundant JSON serialization calls in data store helpers.
