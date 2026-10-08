@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { CampusEvent } from '../../types';
 import { campusEvents } from '../../data/mockData';
 import { Calendar, Clock, MapPin, Tag, Users, CheckCircle2, Download, Share2, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -13,10 +13,27 @@ export const EventCalendar: React.FC = () => {
 
   const categories = ['All', 'Academic', 'Workshop', 'Career', 'Sports'];
 
-  const filteredEvents = events.filter(e => {
-    if (selectedCategory === 'All') return true;
-    return e.category === selectedCategory;
-  });
+  // Bolt ⚡ Optimization: Memoize category filtered events to avoid re-filtering on unrelated state updates.
+  const filteredEvents = useMemo(() => {
+    return events.filter(e => {
+      if (selectedCategory === 'All') return true;
+      return e.category === selectedCategory;
+    });
+  }, [events, selectedCategory]);
+
+  // Bolt ⚡ Optimization: Pre-index events by date in O(N) time so calendar cell lookup is O(1) instead of O(Days * N).
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, CampusEvent[]>();
+    for (const event of filteredEvents) {
+      const list = map.get(event.date);
+      if (list) {
+        list.push(event);
+      } else {
+        map.set(event.date, [event]);
+      }
+    }
+    return map;
+  }, [filteredEvents]);
 
   const toggleRsvp = (eventId: string) => {
     setRsvpEvents(prev =>
@@ -163,7 +180,7 @@ END:VCALENDAR`;
 
             {daysInOctober.map(day => {
               const dayStr = `2026-10-${day < 10 ? '0' + day : day}`;
-              const dayEvents = filteredEvents.filter(e => e.date === dayStr);
+              const dayEvents = eventsByDate.get(dayStr) || [];
 
               return (
                 <div
