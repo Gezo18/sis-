@@ -265,11 +265,28 @@ export const SisAcademicPlan: React.FC<Props> = ({ student, currentUser, onDataU
     return { label: 'Academic Warning / Probation (Under 2.00)', bg: 'bg-red-100 text-red-900 border-red-300' };
   };
 
-  const filteredCourses = courses.filter(c => {
-    if (selectedLevel !== 'all' && c.level !== selectedLevel) return false;
-    if (selectedStatus !== 'all' && c.status !== selectedStatus) return false;
-    return true;
-  });
+  // Performance optimization: Memoize course counts and filtered course lists to prevent redundant array iterations on calculator interactions or re-renders.
+  const statusCounts = useMemo(() => {
+    let passed = 0;
+    let registered = 0;
+    let available = 0;
+    let locked = 0;
+    for (const c of courses) {
+      if (c.status === 'passed') passed++;
+      else if (c.status === 'registered') registered++;
+      else if (c.status === 'available') available++;
+      else if (c.status === 'locked') locked++;
+    }
+    return { passed, registered, available, locked };
+  }, [courses]);
+
+  const filteredCourses = useMemo(() => {
+    return courses.filter(c => {
+      if (selectedLevel !== 'all' && c.level !== selectedLevel) return false;
+      if (selectedStatus !== 'all' && c.status !== selectedStatus) return false;
+      return true;
+    });
+  }, [courses, selectedLevel, selectedStatus]);
 
   return (
     <div className="flex-1 bg-white min-h-[calc(100vh-60px)] flex flex-col font-sans">
@@ -956,10 +973,10 @@ export const SisAcademicPlan: React.FC<Props> = ({ student, currentUser, onDataU
                 className="bg-white border border-gray-300 rounded px-2 py-1 text-xs text-gray-700 font-medium"
               >
                 <option value="all">All Courses ({courses.length})</option>
-                <option value="passed">Passed ({courses.filter(c => c.status === 'passed').length})</option>
-                <option value="registered">Registered ({courses.filter(c => c.status === 'registered').length})</option>
-                <option value="available">Available ({courses.filter(c => c.status === 'available').length})</option>
-                <option value="locked">Locked ({courses.filter(c => c.status === 'locked').length})</option>
+                <option value="passed">Passed ({statusCounts.passed})</option>
+                <option value="registered">Registered ({statusCounts.registered})</option>
+                <option value="available">Available ({statusCounts.available})</option>
+                <option value="locked">Locked ({statusCounts.locked})</option>
               </select>
             </div>
           </div>
