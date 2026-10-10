@@ -29,12 +29,14 @@ test.describe('Automated Dynamic Site Crawler & Deep Health Verification', () =>
 
   test('Deep Health Endpoint Check: /api/health/deep requires authentication', async ({ request }) => {
     const unauthorizedRes = await request.get('/api/health/deep');
-    expect([401, 403]).toContain(unauthorizedRes.status());
+    expect(unauthorizedRes.status()).toBe(401);
 
+    const adminToken = process.env.HEALTH_ADMIN_TOKEN;
+    test.skip(!adminToken, 'Set HEALTH_ADMIN_TOKEN to verify authorized deep diagnostics.');
     // With Admin Bearer Token
     const authorizedRes = await request.get('/api/health/deep', {
       headers: {
-        Authorization: 'Bearer sut_admin_sec_9aba2480_key',
+        Authorization: `Bearer ${adminToken}`,
       },
     });
     expect([200, 503]).toContain(authorizedRes.status());

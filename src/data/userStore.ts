@@ -496,12 +496,7 @@ export const userStore = {
     // Check local store
     const existingIndex = users.findIndex(u => u.email.toLowerCase() === normalizedEmail);
     if (existingIndex !== -1) {
-      if (params.password) {
-        users[existingIndex].password = params.password;
-        this.saveUsers(users);
-      }
-      this.setCurrentUser(users[existingIndex]);
-      return { success: true, user: users[existingIndex] };
+      return this.authenticate(normalizedEmail, params.password);
     }
 
     // Determine unique studentId
@@ -537,7 +532,8 @@ export const userStore = {
     const newUser: UserAccount = {
       id: 'usr_student_' + finalStudentId,
       email: normalizedEmail,
-      password: params.password || 'password123',
+      password: supabaseService.isConfigured() ? undefined : (params.password || 'password123'),
+      authProvider: supabaseService.isConfigured() ? 'supabase' : 'local',
       role: 'student',
       name: params.name.trim(),
       createdAt: new Date().toISOString(),
@@ -549,28 +545,30 @@ export const userStore = {
       advisorNotes: [],
     };
 
-    // 1. Persist directly to Supabase students table
+    // Supabase creates the linked student row from Auth metadata in a database
+    // trigger; the client must not create privileged academic fields itself.
     if (supabaseService.isConfigured()) {
-      try {
-        const res = await supabaseService.upsertStudent(newUser);
-        if (res.data && res.data.id) {
-          newUser.id = res.data.id;
-        }
-      } catch (err) {
-        console.warn('Supabase upsertStudent error on register:', err);
+      const authResult = await supabaseService.signUpWithSupabaseAuth(normalizedEmail, params.password || 'password123', {
+        fullName: params.name.trim(),
+        studentId: finalStudentId,
+        program: programName,
+        level: params.level || 'Level 1',
+      });
+      if (!authResult.success || !authResult.user?.id) {
+        return {
+          success: false,
+          error: authResult.error || 'Supabase did not return the new account. Please try again.',
+        };
       }
 
-      // 2. Register user on Supabase Auth
-      try {
-        await supabaseService.signUpWithSupabaseAuth(normalizedEmail, params.password || 'password123', {
-          fullName: params.name.trim(),
-          studentId: finalStudentId,
-          program: programName,
-          level: params.level || 'Level 1',
-        });
-      } catch (authErr) {
-        console.warn('Supabase Auth signUp non-fatal warning:', authErr);
+      const profile = await supabaseService.findStudentByAuthUserId(authResult.user.id);
+      if (!profile) {
+        return {
+          success: false,
+          error: 'Your account was created, but the SIS profile is not available yet. If email confirmation is enabled, verify your email and sign in.',
+        };
       }
+      newUser.id = profile.id;
     }
 
     users.unshift(newUser);
@@ -594,33 +592,30 @@ export const userStore = {
 
     const clean = identifier.trim().toLowerCase();
     const cleanPass = (password || '').trim();
+    if (!cleanPass) {
+      return { success: false, error: 'Please enter your password.' };
+    }
 
-    // 1. Direct query to Supabase students table
-    if (supabaseService.isConfigured()) {
+    // Authenticate first, then resolve the student profile by the trusted Auth
+    // user ID. Unauthenticated email/student-ID lookups are blocked by RLS.
+    if (supabaseService.isConfigured() && clean.includes('@')) {
       try {
-        const supabaseStudent = await supabaseService.findStudentByEmailOrId(clean);
-        if (supabaseStudent) {
-          // If password was provided, attempt Supabase Auth sign-in or verify against local record
-          if (cleanPass) {
-            const authRes = await supabaseService.signInWithSupabaseAuth(supabaseStudent.email, cleanPass);
-            // If Supabase Auth failed with invalid credentials AND we have a stored password, check match
-            const users = this.getUsers();
-            const localMatch = users.find(u => u.email.toLowerCase() === supabaseStudent.email.toLowerCase() || u.studentProfile?.studentId === supabaseStudent.student_id);
-            
-            if (!authRes.success) {
-              if (localMatch && localMatch.password && localMatch.password !== cleanPass) {
-                return {
-                  success: false,
-                  error: `Incorrect password for ${supabaseStudent.email}. Please verify and try again.`,
-                };
-              }
-            }
+        const authRes = await supabaseService.signInWithSupabaseAuth(clean, cleanPass);
+        if (authRes.success && authRes.user?.id) {
+          const supabaseStudent = await supabaseService.findStudentByAuthUserId(authRes.user.id);
+          if (!supabaseStudent) {
+            return {
+              success: false,
+              error: 'This Supabase account has no linked student profile. Contact your SIS administrator.',
+            };
           }
 
-          // Build or retrieve existing account matching this exact Supabase student
           const users = this.getUsers();
-          let matchedUser = users.find(u => u.email.toLowerCase() === supabaseStudent.email.toLowerCase() || u.studentProfile?.studentId === supabaseStudent.student_id);
-
+          let matchedUser = users.find(u =>
+            u.role === 'student' &&
+            (u.email.toLowerCase() === supabaseStudent.email.toLowerCase() ||
+              u.studentProfile?.studentId === supabaseStudent.student_id)
+          );
           const studentProgram = supabaseStudent.student_program || 'Computer Science Technology Program';
           const studentProgramAr = studentProgram.includes('Computer Science')
             ? 'برنامج تكنولوجيا علوم الحاسب - 2023'
@@ -651,7 +646,7 @@ export const userStore = {
             matchedUser = {
               id: supabaseStudent.id || `usr_student_${supabaseStudent.student_id}`,
               email: supabaseStudent.email.toLowerCase(),
-              password: cleanPass || 'password123',
+              authProvider: 'supabase',
               role: 'student',
               name: supabaseStudent.student_name,
               createdAt: supabaseStudent.created_at || new Date().toISOString(),
@@ -666,11 +661,11 @@ export const userStore = {
           } else {
             matchedUser.name = supabaseStudent.student_name;
             matchedUser.studentProfile = studentProfile;
+            matchedUser.id = supabaseStudent.id;
+            matchedUser.authProvider = 'supabase';
+            delete matchedUser.password;
             if (remoteRequests.length > 0) {
               matchedUser.requests = remoteRequests;
-            }
-            if (cleanPass) {
-              matchedUser.password = cleanPass;
             }
           }
 
@@ -708,20 +703,19 @@ export const userStore = {
 
     // If local user matched:
     if (user) {
-      if (cleanPass && user.password) {
-        const isMatch =
-          user.password === cleanPass ||
-          user.password.toLowerCase() === cleanPass.toLowerCase() ||
-          cleanPass === 'password123' ||
-          cleanPass === 'teacher123' ||
-          cleanPass === 'staff123';
+      const hasDatabaseId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(user.id);
+      if (user.authProvider === 'supabase' || (supabaseService.isConfigured() && hasDatabaseId)) {
+        return {
+          success: false,
+          error: `Incorrect password for ${user.email}. Please verify your Supabase password and try again.`,
+        };
+      }
 
-        if (!isMatch) {
-          return {
-            success: false,
-            error: `Incorrect password for ${user.email}. Please verify your password and try again.`,
-          };
-        }
+      if (!user.password || user.password !== cleanPass) {
+        return {
+          success: false,
+          error: `Incorrect password for ${user.email}. Please verify your password and try again.`,
+        };
       }
 
       this.setCurrentUser(user);
@@ -774,13 +768,16 @@ export const userStore = {
 
         if (existingIdx !== -1) {
           users[existingIdx].name = s.student_name;
+          users[existingIdx].id = s.id;
+          users[existingIdx].authProvider = 'supabase';
+          delete users[existingIdx].password;
           users[existingIdx].studentProfile = studentProfile;
           changed = true;
         } else {
           users.push({
             id: s.id || `usr_student_${s.student_id}`,
             email: s.email.toLowerCase(),
-            password: 'password123',
+            authProvider: 'supabase',
             role: 'student',
             name: s.student_name,
             createdAt: s.created_at || new Date().toISOString(),
@@ -1114,7 +1111,17 @@ export const userStore = {
     this.saveUsers(users);
 
     if (supabaseService.isConfigured()) {
-      supabaseService.upsertStudent(student).catch(err => console.warn('Supabase sync warning:', err));
+      const profile = student.studentProfile;
+      if (profile) {
+        supabaseService.updateStudentByTeacher(studentId, {
+          cgpa: profile.cgpa,
+          totalPassedCH: profile.totalPassedCH,
+          academicStatus: profile.academicStatus,
+          academicWarnings: profile.academicWarnings,
+        }).then(result => {
+          if (!result.success) console.warn('Supabase academic profile sync warning:', result.error);
+        });
+      }
     }
 
     return { success: true };
@@ -1147,7 +1154,12 @@ export const userStore = {
     this.saveUsers(users);
 
     if (supabaseService.isConfigured()) {
-      supabaseService.upsertStudent(student).catch(err => console.warn('Supabase sync warning:', err));
+      supabaseService.updateStudentByTeacher(studentId, {
+        advisorName,
+        advisorEmail,
+      }).then(result => {
+        if (!result.success) console.warn('Supabase advisor assignment sync warning:', result.error);
+      });
     }
 
     return { success: true };
@@ -1176,7 +1188,12 @@ export const userStore = {
     this.saveUsers(users);
 
     if (supabaseService.isConfigured()) {
-      supabaseService.upsertStudent(student).catch(err => console.warn('Supabase sync warning:', err));
+      supabaseService.updateStudentByTeacher(studentId, {
+        advisorName: 'Pending Staff Assignment',
+        advisorEmail: '',
+      }).then(result => {
+        if (!result.success) console.warn('Supabase advisor removal sync warning:', result.error);
+      });
     }
 
     return { success: true };
@@ -1260,7 +1277,13 @@ export const userStore = {
     this.saveUsers(users);
 
     if (supabaseService.isConfigured()) {
-      supabaseService.upsertStudent(student).catch(err => console.warn('Supabase sync warning:', err));
+      if (student.studentProfile) {
+        supabaseService.updateStudentByTeacher(studentId, {
+          registeredCH: student.studentProfile.registeredCH,
+        }).then(result => {
+          if (!result.success) console.warn('Supabase course enrollment sync warning:', result.error);
+        });
+      }
     }
 
     return { success: true };
@@ -1300,7 +1323,13 @@ export const userStore = {
     this.saveUsers(users);
 
     if (supabaseService.isConfigured()) {
-      supabaseService.upsertStudent(student).catch(err => console.warn('Supabase sync warning:', err));
+      if (student.studentProfile) {
+        supabaseService.updateStudentByTeacher(studentId, {
+          registeredCH: student.studentProfile.registeredCH,
+        }).then(result => {
+          if (!result.success) console.warn('Supabase course drop sync warning:', result.error);
+        });
+      }
     }
 
     return { success: true };

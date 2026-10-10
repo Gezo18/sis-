@@ -85,7 +85,7 @@ interface APMMetrics {
 
 export function DeepHealthSecurityConsole({ onClose }: { onClose?: () => void }) {
   const [activeTab, setActiveTab] = useState<'health' | 'crawler' | 'interactive' | 'apm' | 'security'>('health');
-  const [adminToken, setAdminToken] = useState('sut_admin_sec_9aba2480_key');
+  const [adminToken, setAdminToken] = useState(() => (typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_HEALTH_ADMIN_TOKEN ?? '') : ''));
   const [healthData, setHealthData] = useState<DeepHealthData | null>(null);
   const [lightweightHealth, setLightweightHealth] = useState<any>(null);
   const [apmMetrics, setApmMetrics] = useState<APMMetrics | null>(null);
@@ -143,16 +143,19 @@ export function DeepHealthSecurityConsole({ onClose }: { onClose?: () => void })
     setIsLoadingHealth(true);
     setHealthError(null);
     try {
-      // 1. Fetch lightweight public /health
       const lightRes = await fetch('/health');
       if (lightRes.ok) {
         setLightweightHealth(await lightRes.json());
       }
 
-      // 2. Fetch admin deep health
+      const token = adminToken.trim();
+      if (!token) {
+        throw new Error('Add a valid HEALTH_ADMIN_TOKEN before running deep diagnostics.');
+      }
+
       const deepRes = await fetch('/api/health/deep', {
         headers: {
-          Authorization: `Bearer ${adminToken}`,
+          Authorization: `Bearer ${token}`,
         },
       });
 
@@ -342,9 +345,14 @@ export function DeepHealthSecurityConsole({ onClose }: { onClose?: () => void })
   };
 
   useEffect(() => {
-    fetchDeepHealth();
+    if (!adminToken.trim()) {
+      setHealthError('Set HEALTH_ADMIN_TOKEN to enable deep diagnostics.');
+      setHealthData(null);
+    } else {
+      fetchDeepHealth();
+    }
     fetchApmMetrics();
-  }, []);
+  }, [adminToken]);
 
   return (
     <div className="bg-slate-900 border border-slate-700/60 rounded-2xl shadow-2xl overflow-hidden text-slate-100 mb-8 max-h-[85vh] flex flex-col">

@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS public.teachers (
 -- 3. Create Students Table
 CREATE TABLE IF NOT EXISTS public.students (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID UNIQUE REFERENCES auth.users(id) ON DELETE SET NULL,
     student_id VARCHAR(32) UNIQUE,
     first_name VARCHAR(128) DEFAULT '',
     last_name VARCHAR(128) DEFAULT '',
@@ -53,6 +54,7 @@ CREATE TABLE IF NOT EXISTS public.students (
     faculty_department VARCHAR(255) DEFAULT 'Faculty of Information Technology',
     advisor_name VARCHAR(255) DEFAULT 'Dr. Tarek Abdel-Azim',
     advisor_email VARCHAR(255) DEFAULT 'tarek.azim@sut.edu.eg',
+    advisor_teacher_id UUID REFERENCES public.teachers(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -74,6 +76,7 @@ CREATE TABLE IF NOT EXISTS public.courses (
     semester INTEGER DEFAULT 1 CONSTRAINT check_courses_semester CHECK (semester >= 1 AND semester <= 10),
     prerequisites TEXT[] DEFAULT '{}',
     description TEXT,
+    is_published BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -148,7 +151,10 @@ CREATE TABLE IF NOT EXISTS public.advisor_notes (
 -- Foreign key indexes
 CREATE INDEX IF NOT EXISTS idx_admins_user_id ON public.admins (user_id);
 CREATE INDEX IF NOT EXISTS idx_teachers_user_id ON public.teachers (user_id);
+CREATE INDEX IF NOT EXISTS idx_students_user_id ON public.students (user_id);
+CREATE INDEX IF NOT EXISTS idx_students_advisor_teacher_id ON public.students (advisor_teacher_id);
 CREATE INDEX IF NOT EXISTS idx_courses_teacher_id ON public.courses (teacher_id);
+CREATE INDEX IF NOT EXISTS idx_courses_published_catalog ON public.courses (department, level, semester, code) WHERE is_published;
 CREATE INDEX IF NOT EXISTS idx_enrollments_student_id ON public.enrollments (student_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_course_id ON public.enrollments (course_id);
 CREATE INDEX IF NOT EXISTS idx_grades_enrollment_id ON public.grades (enrollment_id);
@@ -184,202 +190,239 @@ CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN
 LANGUAGE sql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = ''
 AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.admins WHERE user_id = auth.uid()
-  ) OR (
-    SELECT NOT EXISTS (SELECT 1 FROM public.teachers WHERE user_id = auth.uid())
-    AND EXISTS (SELECT 1 FROM auth.users WHERE id = auth.uid())
-  );
+  SELECT EXISTS (SELECT 1 FROM public.admins WHERE user_id = auth.uid());
 $$;
 
 CREATE OR REPLACE FUNCTION public.current_teacher_id()
 RETURNS UUID
 LANGUAGE sql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = ''
 AS $$
   SELECT id FROM public.teachers WHERE user_id = auth.uid() LIMIT 1;
 $$;
 
--- ═══════════════════════════════════════════════
--- RLS Policies (Idempotent)
--- ═══════════════════════════════════════════════
+CREATE OR REPLACE FUNCTION public.current_student_id()
+RETURNS UUID
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT id FROM public.students WHERE user_id = auth.uid() LIMIT 1;
+$$;
 
--- Admins
-DROP POLICY IF EXISTS "Admins: full access for admins" ON public.admins;
-CREATE POLICY "Admins: full access for admins"
-  ON public.admins FOR ALL TO authenticated
+CREATE OR REPLACE FUNCTION public.is_teacher_for_student(target_student_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.students s
+    WHERE s.id = target_student_id
+      AND s.advisor_teacher_id = public.current_teacher_id()
+  ) OR EXISTS (
+    SELECT 1
+    FROM public.enrollments e
+    JOIN public.courses c ON c.id = e.course_id
+    WHERE e.student_id = target_student_id
+      AND c.teacher_id = public.current_teacher_id()
+  );
+$$;
+
+-- Replace all existing policies on SIS tables so permissive legacy policies cannot
+-- combine with the policies below and silently restore broad access.
+DO $$
+DECLARE
+  policy_row RECORD;
+BEGIN
+  FOR policy_row IN
+    SELECT schemaname, tablename, policyname
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename IN ('admins', 'teachers', 'students', 'courses', 'enrollments',
+                        'grades', 'attendance_records', 'student_requests', 'advisor_notes')
+  LOOP
+    EXECUTE format('DROP POLICY %I ON %I.%I', policy_row.policyname, policy_row.schemaname, policy_row.tablename);
+  END LOOP;
+END $$;
+
+CREATE POLICY "admins_read_and_manage_admins" ON public.admins FOR ALL TO authenticated
   USING (public.is_admin()) WITH CHECK (public.is_admin());
 
--- Students
-DROP POLICY IF EXISTS "Students: select for authenticated"   ON public.students;
-DROP POLICY IF EXISTS "Students: insert for teachers and admins" ON public.students;
-DROP POLICY IF EXISTS "Students: update for admins only"     ON public.students;
-DROP POLICY IF EXISTS "Students: delete for admins only"     ON public.students;
-
-CREATE POLICY "Students: select for authenticated"
-  ON public.students FOR SELECT TO authenticated
+CREATE POLICY "teachers_public_directory" ON public.teachers FOR SELECT TO anon, authenticated
   USING (true);
-
-CREATE POLICY "Students: insert for teachers and admins"
-  ON public.students FOR INSERT TO authenticated
-  WITH CHECK (true);
-
-CREATE POLICY "Students: update for admins only"
-  ON public.students FOR UPDATE TO authenticated
+CREATE POLICY "teachers_admin_manage" ON public.teachers FOR ALL TO authenticated
   USING (public.is_admin()) WITH CHECK (public.is_admin());
 
-CREATE POLICY "Students: delete for admins only"
-  ON public.students FOR DELETE TO authenticated
+CREATE POLICY "students_read_self_or_assigned_staff" ON public.students FOR SELECT TO authenticated
+  USING (user_id = auth.uid() OR public.is_admin() OR public.is_teacher_for_student(id));
+CREATE POLICY "students_staff_update" ON public.students FOR UPDATE TO authenticated
+  USING (public.is_admin() OR public.is_teacher_for_student(id))
+  WITH CHECK (public.is_admin() OR public.is_teacher_for_student(id));
+CREATE POLICY "students_admin_delete" ON public.students FOR DELETE TO authenticated
   USING (public.is_admin());
 
--- Teachers
-DROP POLICY IF EXISTS "Teachers: select for authenticated"   ON public.teachers;
-DROP POLICY IF EXISTS "Teachers: insert for admins"          ON public.teachers;
-DROP POLICY IF EXISTS "Teachers: update own profile or admin" ON public.teachers;
-DROP POLICY IF EXISTS "Teachers: delete for admins only"     ON public.teachers;
-
-CREATE POLICY "Teachers: select for authenticated"
-  ON public.teachers FOR SELECT TO authenticated
-  USING (true);
-
-CREATE POLICY "Teachers: insert for admins"
-  ON public.teachers FOR INSERT TO authenticated
-  WITH CHECK (public.is_admin() OR user_id = auth.uid());
-
-CREATE POLICY "Teachers: update own profile or admin"
-  ON public.teachers FOR UPDATE TO authenticated
-  USING (user_id = auth.uid() OR public.is_admin())
-  WITH CHECK (user_id = auth.uid() OR public.is_admin());
-
-CREATE POLICY "Teachers: delete for admins only"
-  ON public.teachers FOR DELETE TO authenticated
-  USING (public.is_admin());
-
--- Courses
-DROP POLICY IF EXISTS "Courses: select for authenticated"    ON public.courses;
-DROP POLICY IF EXISTS "Courses: insert for teachers and admins" ON public.courses;
-DROP POLICY IF EXISTS "Courses: update for teacher or admin" ON public.courses;
-DROP POLICY IF EXISTS "Courses: delete for teacher or admin" ON public.courses;
-
-CREATE POLICY "Courses: select for authenticated"
-  ON public.courses FOR SELECT TO authenticated
-  USING (true);
-
-CREATE POLICY "Courses: insert for teachers and admins"
-  ON public.courses FOR INSERT TO authenticated
+CREATE POLICY "courses_public_catalog" ON public.courses FOR SELECT TO anon, authenticated
+  USING (is_published OR public.is_admin() OR teacher_id = public.current_teacher_id());
+CREATE POLICY "courses_staff_insert" ON public.courses FOR INSERT TO authenticated
   WITH CHECK (public.is_admin() OR teacher_id = public.current_teacher_id());
-
-CREATE POLICY "Courses: update for teacher or admin"
-  ON public.courses FOR UPDATE TO authenticated
+CREATE POLICY "courses_staff_update" ON public.courses FOR UPDATE TO authenticated
   USING (public.is_admin() OR teacher_id = public.current_teacher_id())
   WITH CHECK (public.is_admin() OR teacher_id = public.current_teacher_id());
-
-CREATE POLICY "Courses: delete for teacher or admin"
-  ON public.courses FOR DELETE TO authenticated
+CREATE POLICY "courses_staff_delete" ON public.courses FOR DELETE TO authenticated
   USING (public.is_admin() OR teacher_id = public.current_teacher_id());
 
--- Enrollments
-DROP POLICY IF EXISTS "Enrollments: select for authenticated" ON public.enrollments;
-DROP POLICY IF EXISTS "Enrollments: insert for own course or admin" ON public.enrollments;
-DROP POLICY IF EXISTS "Enrollments: update for own course or admin" ON public.enrollments;
-DROP POLICY IF EXISTS "Enrollments: delete for own course or admin" ON public.enrollments;
-
-CREATE POLICY "Enrollments: select for authenticated"
-  ON public.enrollments FOR SELECT TO authenticated
-  USING (true);
-
-CREATE POLICY "Enrollments: insert for own course or admin"
-  ON public.enrollments FOR INSERT TO authenticated
+CREATE POLICY "enrollments_read_self_or_staff" ON public.enrollments FOR SELECT TO authenticated
+  USING (student_id = public.current_student_id() OR public.is_admin()
+         OR EXISTS (SELECT 1 FROM public.courses c
+                    WHERE c.id = enrollments.course_id AND c.teacher_id = public.current_teacher_id()));
+CREATE POLICY "enrollments_insert_self_or_staff" ON public.enrollments FOR INSERT TO authenticated
   WITH CHECK (
-    public.is_admin() OR
-    course_id IN (SELECT id FROM public.courses WHERE teacher_id = public.current_teacher_id())
+    (student_id = public.current_student_id() AND EXISTS (
+      SELECT 1 FROM public.courses c WHERE c.id = enrollments.course_id AND c.is_published
+    ))
+    OR public.is_admin()
+    OR EXISTS (SELECT 1 FROM public.courses c
+               WHERE c.id = enrollments.course_id AND c.teacher_id = public.current_teacher_id())
   );
+CREATE POLICY "enrollments_staff_update" ON public.enrollments FOR UPDATE TO authenticated
+  USING (public.is_admin() OR EXISTS (SELECT 1 FROM public.courses c
+                                      WHERE c.id = enrollments.course_id AND c.teacher_id = public.current_teacher_id()))
+  WITH CHECK (public.is_admin() OR EXISTS (SELECT 1 FROM public.courses c
+                                           WHERE c.id = enrollments.course_id AND c.teacher_id = public.current_teacher_id()));
+CREATE POLICY "enrollments_staff_delete" ON public.enrollments FOR DELETE TO authenticated
+  USING (public.is_admin() OR EXISTS (SELECT 1 FROM public.courses c
+                                      WHERE c.id = enrollments.course_id AND c.teacher_id = public.current_teacher_id()));
 
-CREATE POLICY "Enrollments: update for own course or admin"
-  ON public.enrollments FOR UPDATE TO authenticated
-  USING (
-    public.is_admin() OR
-    course_id IN (SELECT id FROM public.courses WHERE teacher_id = public.current_teacher_id())
+CREATE POLICY "grades_read_self_or_staff" ON public.grades FOR SELECT TO authenticated
+  USING (public.is_admin() OR EXISTS (
+    SELECT 1 FROM public.enrollments e
+    WHERE e.id = grades.enrollment_id
+      AND (e.student_id = public.current_student_id()
+           OR EXISTS (SELECT 1 FROM public.courses c
+                      WHERE c.id = e.course_id AND c.teacher_id = public.current_teacher_id()))
+  ));
+CREATE POLICY "grades_staff_insert" ON public.grades FOR INSERT TO authenticated
+  WITH CHECK (public.is_admin() OR EXISTS (
+    SELECT 1 FROM public.enrollments e JOIN public.courses c ON c.id = e.course_id
+    WHERE e.id = grades.enrollment_id AND c.teacher_id = public.current_teacher_id()
+  ));
+CREATE POLICY "grades_staff_update" ON public.grades FOR UPDATE TO authenticated
+  USING (public.is_admin() OR EXISTS (
+    SELECT 1 FROM public.enrollments e JOIN public.courses c ON c.id = e.course_id
+    WHERE e.id = grades.enrollment_id AND c.teacher_id = public.current_teacher_id()
+  ))
+  WITH CHECK (public.is_admin() OR EXISTS (
+    SELECT 1 FROM public.enrollments e JOIN public.courses c ON c.id = e.course_id
+    WHERE e.id = grades.enrollment_id AND c.teacher_id = public.current_teacher_id()
+  ));
+CREATE POLICY "grades_staff_delete" ON public.grades FOR DELETE TO authenticated
+  USING (public.is_admin() OR EXISTS (
+    SELECT 1 FROM public.enrollments e JOIN public.courses c ON c.id = e.course_id
+    WHERE e.id = grades.enrollment_id AND c.teacher_id = public.current_teacher_id()
+  ));
+
+CREATE POLICY "attendance_read_self_or_staff" ON public.attendance_records FOR SELECT TO authenticated
+  USING (student_id = public.current_student_id() OR public.is_admin()
+         OR public.is_teacher_for_student(student_id));
+CREATE POLICY "attendance_staff_insert" ON public.attendance_records FOR INSERT TO authenticated
+  WITH CHECK (public.is_admin() OR public.is_teacher_for_student(student_id));
+CREATE POLICY "attendance_staff_update" ON public.attendance_records FOR UPDATE TO authenticated
+  USING (public.is_admin() OR public.is_teacher_for_student(student_id))
+  WITH CHECK (public.is_admin() OR public.is_teacher_for_student(student_id));
+CREATE POLICY "attendance_staff_delete" ON public.attendance_records FOR DELETE TO authenticated
+  USING (public.is_admin() OR public.is_teacher_for_student(student_id));
+
+CREATE POLICY "requests_read_self_or_staff" ON public.student_requests FOR SELECT TO authenticated
+  USING (student_id = public.current_student_id() OR public.is_admin()
+         OR public.is_teacher_for_student(student_id));
+CREATE POLICY "requests_insert_self" ON public.student_requests FOR INSERT TO authenticated
+  WITH CHECK (student_id = public.current_student_id()
+              AND status IN ('Pending', 'Under Review')
+              AND reviewed_by IS NULL AND reviewed_at IS NULL);
+CREATE POLICY "requests_staff_update" ON public.student_requests FOR UPDATE TO authenticated
+  USING (public.is_admin() OR public.is_teacher_for_student(student_id))
+  WITH CHECK (public.is_admin() OR public.is_teacher_for_student(student_id));
+CREATE POLICY "requests_admin_delete" ON public.student_requests FOR DELETE TO authenticated
+  USING (public.is_admin());
+
+CREATE POLICY "advisor_notes_staff_read" ON public.advisor_notes FOR SELECT TO authenticated
+  USING (public.is_admin() OR public.is_teacher_for_student(student_id));
+CREATE POLICY "advisor_notes_staff_insert" ON public.advisor_notes FOR INSERT TO authenticated
+  WITH CHECK (public.is_admin() OR public.is_teacher_for_student(student_id));
+CREATE POLICY "advisor_notes_staff_update" ON public.advisor_notes FOR UPDATE TO authenticated
+  USING (public.is_admin() OR public.is_teacher_for_student(student_id))
+  WITH CHECK (public.is_admin() OR public.is_teacher_for_student(student_id));
+CREATE POLICY "advisor_notes_staff_delete" ON public.advisor_notes FOR DELETE TO authenticated
+  USING (public.is_admin() OR public.is_teacher_for_student(student_id));
+
+REVOKE ALL ON public.admins, public.teachers, public.students, public.courses,
+  public.enrollments, public.grades, public.attendance_records,
+  public.student_requests, public.advisor_notes FROM anon, authenticated;
+
+GRANT SELECT ON public.teachers TO anon, authenticated;
+GRANT SELECT ON public.courses TO anon, authenticated;
+GRANT SELECT ON public.students, public.enrollments, public.grades,
+  public.attendance_records, public.student_requests, public.advisor_notes,
+  public.admins TO authenticated;
+GRANT INSERT ON public.enrollments, public.student_requests TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON public.teachers, public.courses, public.enrollments,
+  public.grades, public.attendance_records, public.student_requests,
+  public.advisor_notes, public.admins TO authenticated;
+GRANT UPDATE, DELETE ON public.students TO authenticated;
+
+REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.current_teacher_id() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.current_student_id() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.is_teacher_for_student(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.current_teacher_id() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.current_student_id() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_teacher_for_student(UUID) TO authenticated;
+
+-- Student profiles are created transactionally with Auth signup, so clients
+-- cannot supply privileged academic fields or claim an existing student row.
+CREATE OR REPLACE FUNCTION public.create_student_profile_for_auth_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  full_name TEXT := trim(COALESCE(NEW.raw_user_meta_data ->> 'full_name', ''));
+  first_name TEXT := split_part(trim(COALESCE(NEW.raw_user_meta_data ->> 'full_name', '')), ' ', 1);
+  parsed_level TEXT := regexp_replace(COALESCE(NEW.raw_user_meta_data ->> 'level', ''), '\D', '', 'g');
+BEGIN
+  IF COALESCE(NEW.raw_user_meta_data ->> 'role', '') <> 'student' THEN
+    RETURN NEW;
+  END IF;
+
+  INSERT INTO public.students (
+    user_id, student_id, first_name, last_name, email, student_program, level
   )
-  WITH CHECK (
-    public.is_admin() OR
-    course_id IN (SELECT id FROM public.courses WHERE teacher_id = public.current_teacher_id())
+  VALUES (
+    NEW.id,
+    NULLIF(trim(NEW.raw_user_meta_data ->> 'student_id'), ''),
+    first_name,
+    trim(substr(full_name, length(first_name) + 1)),
+    lower(NEW.email),
+    COALESCE(NULLIF(trim(NEW.raw_user_meta_data ->> 'student_program'), ''),
+             'Computer Science Technology Program'),
+    CASE WHEN parsed_level IN ('1', '2', '3', '4', '5') THEN parsed_level::INTEGER ELSE 1 END
   );
 
-CREATE POLICY "Enrollments: delete for own course or admin"
-  ON public.enrollments FOR DELETE TO authenticated
-  USING (
-    public.is_admin() OR
-    course_id IN (SELECT id FROM public.courses WHERE teacher_id = public.current_teacher_id())
-  );
+  RETURN NEW;
+END;
+$$;
 
--- Grades
-DROP POLICY IF EXISTS "Grades: select for authenticated"       ON public.grades;
-DROP POLICY IF EXISTS "Grades: teacher inserts for own courses" ON public.grades;
-DROP POLICY IF EXISTS "Grades: teacher updates for own courses" ON public.grades;
-DROP POLICY IF EXISTS "Grades: teacher deletes for own courses" ON public.grades;
+DROP TRIGGER IF EXISTS create_student_profile_after_auth_signup ON auth.users;
+CREATE TRIGGER create_student_profile_after_auth_signup
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.create_student_profile_for_auth_user();
 
-CREATE POLICY "Grades: select for authenticated"
-  ON public.grades FOR SELECT TO authenticated
-  USING (true);
-
-CREATE POLICY "Grades: teacher inserts for own courses"
-  ON public.grades FOR INSERT TO authenticated
-  WITH CHECK (
-    public.is_admin() OR
-    enrollment_id IN (
-      SELECT e.id FROM public.enrollments e
-      JOIN public.courses c ON c.id = e.course_id
-      WHERE c.teacher_id = public.current_teacher_id()
-    )
-  );
-
-CREATE POLICY "Grades: teacher updates for own courses"
-  ON public.grades FOR UPDATE TO authenticated
-  USING (
-    public.is_admin() OR
-    enrollment_id IN (
-      SELECT e.id FROM public.enrollments e
-      JOIN public.courses c ON c.id = e.course_id
-      WHERE c.teacher_id = public.current_teacher_id()
-    )
-  )
-  WITH CHECK (
-    public.is_admin() OR
-    enrollment_id IN (
-      SELECT e.id FROM public.enrollments e
-      JOIN public.courses c ON c.id = e.course_id
-      WHERE c.teacher_id = public.current_teacher_id()
-    )
-  );
-
-CREATE POLICY "Grades: teacher deletes for own courses"
-  ON public.grades FOR DELETE TO authenticated
-  USING (
-    public.is_admin() OR
-    enrollment_id IN (
-      SELECT e.id FROM public.enrollments e
-      JOIN public.courses c ON c.id = e.course_id
-      WHERE c.teacher_id = public.current_teacher_id()
-    )
-  );
-
--- Attendance, Requests & Notes
-DROP POLICY IF EXISTS "Attendance: manage for teacher and admin" ON public.attendance_records;
-DROP POLICY IF EXISTS "Requests: manage for teacher and admin" ON public.student_requests;
-DROP POLICY IF EXISTS "Advisor notes: manage for teacher and admin" ON public.advisor_notes;
-
-CREATE POLICY "Attendance: manage for teacher and admin"
-  ON public.attendance_records FOR ALL TO authenticated
-  USING (true) WITH CHECK (true);
-
-CREATE POLICY "Requests: manage for teacher and admin"
-  ON public.student_requests FOR ALL TO authenticated
-  USING (true) WITH CHECK (true);
-
-CREATE POLICY "Advisor notes: manage for teacher and admin"
-  ON public.advisor_notes FOR ALL TO authenticated
-  USING (true) WITH CHECK (true);
+REVOKE ALL ON FUNCTION public.create_student_profile_for_auth_user() FROM PUBLIC, anon, authenticated;

@@ -4,9 +4,9 @@ import {
 } from 'lucide-react';
 import { 
   getSupabaseConfig, setSupabaseCredentials, clearSupabaseCredentials, 
-  isSupabaseConfigured, supabaseService 
+  isSupabaseConfigured, supabaseService, type SupabaseConnectionReport
 } from '../../lib/supabase';
-import { userStore } from '../../data/userStore';
+import schemaSql from '../../../supabase/schema.sql?raw';
 
 interface Props {
   isOpen: boolean;
@@ -18,10 +18,9 @@ export const DatabaseConfigModal: React.FC<Props> = ({ isOpen, onClose, onConnec
   const [url, setUrl] = useState('');
   const [anonKey, setAnonKey] = useState('');
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<SupabaseConnectionReport | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
   const [showSchema, setShowSchema] = useState(false);
-
   useEffect(() => {
     if (isOpen) {
       const config = getSupabaseConfig();
@@ -42,183 +41,61 @@ export const DatabaseConfigModal: React.FC<Props> = ({ isOpen, onClose, onConnec
       setTestResult({
         success: false,
         message: 'Please provide both the Supabase Project URL and Anon Public Key.',
+        tables: [],
       });
       return;
     }
 
-    setSupabaseCredentials(cleanUrl, cleanKey);
     setTesting(true);
     setTestResult(null);
 
-    const result = await supabaseService.testConnection();
-    setTesting(false);
-    setTestResult(result);
-
-    if (onConnectionChanged) {
-      onConnectionChanged();
+    try {
+      setSupabaseCredentials(cleanUrl, cleanKey);
+      const result = await supabaseService.testConnection();
+      setTestResult(result);
+      if (onConnectionChanged) onConnectionChanged();
+    } catch (err) {
+      setTestResult({
+        success: false,
+        message: err instanceof Error ? err.message : 'Failed to configure Supabase.',
+        tables: [],
+      });
+    } finally {
+      setTesting(false);
     }
   };
-
-  const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<string | null>(null);
 
   const handleDisconnect = () => {
-    clearSupabaseCredentials();
-    setUrl('');
-    setAnonKey('');
-    setTestResult({
-      success: true,
-      message: 'Supabase credentials disconnected. The portal will continue using persistent browser storage.',
-    });
-    setSyncResult(null);
-    if (onConnectionChanged) {
-      onConnectionChanged();
+    try {
+      clearSupabaseCredentials();
+      setUrl('');
+      setAnonKey('');
+      setTestResult(null);
+      onConnectionChanged?.();
+    } catch (err) {
+      setTestResult({
+        success: false,
+        message: err instanceof Error ? err.message : 'Could not disconnect Supabase.',
+        tables: [],
+      });
     }
   };
 
-  const handleSyncAll = async () => {
-    setSyncing(true);
-    setSyncResult(null);
-    const users = userStore.getUsers().filter(u => u.role === 'student');
-    let successCount = 0;
-    let lastError = '';
-
-    for (const u of users) {
-      const res = await supabaseService.upsertStudent(u);
-      if (res.success) {
-        successCount++;
-      } else if (res.error) {
-        lastError = res.error;
-      }
-    }
-
-    setSyncing(false);
-    if (successCount > 0) {
-      setSyncResult(`Successfully synced ${successCount} student record(s) to Supabase cloud table!`);
-    } else {
-      setSyncResult(`Sync failed: ${lastError || 'Could not write to Supabase students table.'}`);
+  const copySqlToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(schemaSql);
+      setCopiedSql(true);
+      setTimeout(() => setCopiedSql(false), 2500);
+    } catch (err) {
+      setTestResult({
+        success: false,
+        message: err instanceof Error ? `Could not copy schema SQL: ${err.message}` : 'Could not copy schema SQL.',
+        tables: [],
+      });
     }
   };
 
-  const copySqlToClipboard = () => {
-    const sqlContent = `-- ELSEWEDY UNIVERSITY OF TECHNOLOGY (SUT) - COMPLETE SUPABASE SCHEMA
--- Run this in Supabase Dashboard > SQL Editor > New Query
-
--- 1. Students Table
-CREATE TABLE IF NOT EXISTS public.students (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id VARCHAR(32) UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    student_name VARCHAR(255) NOT NULL,
-    cgpa NUMERIC(3, 2) DEFAULT 0.00,
-    academic_status VARCHAR(64) DEFAULT 'Pending Staff Evaluation',
-    academic_warnings INTEGER DEFAULT 0,
-    registered_ch INTEGER DEFAULT 0,
-    total_passed_ch INTEGER DEFAULT 0,
-    level VARCHAR(32) DEFAULT 'Level 1',
-    student_program VARCHAR(255) DEFAULT 'Computer Science Technology (Dual Study)',
-    advisor_name VARCHAR(255) DEFAULT 'Pending Staff Assignment',
-    advisor_email VARCHAR(255) DEFAULT '',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 2. Courses Catalog Table
-CREATE TABLE IF NOT EXISTS public.courses (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    course_code VARCHAR(32) UNIQUE NOT NULL,
-    title VARCHAR(255) NOT NULL,
-    credit_hours INTEGER NOT NULL,
-    lecture_hours INTEGER DEFAULT 2,
-    lab_hours INTEGER DEFAULT 2,
-    department VARCHAR(128) NOT NULL,
-    level INTEGER DEFAULT 1,
-    semester INTEGER DEFAULT 1,
-    prerequisites TEXT[] DEFAULT '{}',
-    description TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 3. Enrollments Table
-CREATE TABLE IF NOT EXISTS public.enrollments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id VARCHAR(32) REFERENCES public.students(student_id) ON DELETE CASCADE,
-    course_code VARCHAR(32) REFERENCES public.courses(course_code) ON DELETE CASCADE,
-    semester VARCHAR(64) DEFAULT 'Spring 2026',
-    status VARCHAR(32) DEFAULT 'registered',
-    grade VARCHAR(8),
-    points NUMERIC(3, 2),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    UNIQUE (student_id, course_code, semester)
-);
-
--- 4. Attendance Records Table
-CREATE TABLE IF NOT EXISTS public.attendance_records (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id VARCHAR(32) REFERENCES public.students(student_id) ON DELETE CASCADE,
-    course_code VARCHAR(32) REFERENCES public.courses(course_code) ON DELETE CASCADE,
-    total_sessions INTEGER DEFAULT 14,
-    attended_sessions INTEGER DEFAULT 14,
-    absent_sessions INTEGER DEFAULT 0,
-    percentage NUMERIC(5, 2) DEFAULT 100.0,
-    warning_status VARCHAR(32) DEFAULT 'Normal',
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    UNIQUE (student_id, course_code)
-);
-
--- 5. Student Petitions & Requests Table
-CREATE TABLE IF NOT EXISTS public.student_requests (
-    id VARCHAR(64) PRIMARY KEY,
-    student_id VARCHAR(32) REFERENCES public.students(student_id) ON DELETE CASCADE,
-    request_type VARCHAR(128) NOT NULL,
-    details TEXT NOT NULL,
-    status VARCHAR(32) DEFAULT 'Under Review',
-    submitted_date DATE DEFAULT CURRENT_DATE,
-    comments TEXT,
-    reviewed_by VARCHAR(255),
-    reviewed_at DATE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 6. Advisor Notes & Directives Table
-CREATE TABLE IF NOT EXISTS public.advisor_notes (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id VARCHAR(32) REFERENCES public.students(student_id) ON DELETE CASCADE,
-    author VARCHAR(255) DEFAULT 'Dr. Tarek Abdel-Azim',
-    note TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 7. Enable RLS & Public Access
-ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.courses ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.attendance_records ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.student_requests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.advisor_notes ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Public students access" ON public.students FOR ALL USING (true);
-CREATE POLICY "Public courses access" ON public.courses FOR ALL USING (true);
-CREATE POLICY "Public enrollments access" ON public.enrollments FOR ALL USING (true);
-CREATE POLICY "Public attendance access" ON public.attendance_records FOR ALL USING (true);
-CREATE POLICY "Public requests access" ON public.student_requests FOR ALL USING (true);
-CREATE POLICY "Public advisor notes access" ON public.advisor_notes FOR ALL USING (true);
-
--- Seed initial courses
-INSERT INTO public.courses (course_code, title, credit_hours, lecture_hours, lab_hours, department, level, semester, description)
-VALUES
-('CS102', 'Structured Programming in C/C++', 3, 2, 2, 'Computer Science Technology', 1, 2, 'Core algorithmic thinking, arrays, memory management, pointers, and file I/O.'),
-('MATH102', 'Linear Algebra & Discrete Structures', 3, 3, 0, 'Basic Sciences', 1, 2, 'Vector spaces, matrices, determinants, graph theory, and boolean logic.'),
-('HUM231', 'Industrial Safety & Environmental Health', 2, 2, 0, 'Humanities', 1, 2, 'OSHA standards, workplace hazards in technology industries, risk mitigation.'),
-('ET104', 'Digital Electronics & Microcontrollers', 3, 2, 2, 'Engineering Technology', 1, 2, 'Logic gates, flip-flops, microcontrollers, embedded C, and breadboard interfacing.')
-ON CONFLICT (course_code) DO NOTHING;`;
-
-    navigator.clipboard.writeText(sqlContent);
-    setCopiedSql(true);
-    setTimeout(() => setCopiedSql(false), 2500);
-  };
-
-  const isConnected = isSupabaseConfigured();
+  const isConfigured = isSupabaseConfigured();
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
@@ -233,15 +110,15 @@ ON CONFLICT (course_code) DO NOTHING;`;
               <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
                 <span>Supabase Database Connection</span>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                  isConnected 
+                  isConfigured
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40' 
                     : 'bg-amber-500/20 text-amber-300 border border-amber-400/40'
                 }`}>
-                  {isConnected ? 'Configured' : 'Not Connected'}
+                  {isConfigured ? 'Configured' : 'Not Connected'}
                 </span>
               </h2>
               <p className="text-xs text-gray-300">
-                Connect external PostgreSQL cloud database to sync student records
+                Configure and verify the SIS Supabase database connection
               </p>
             </div>
           </div>
@@ -255,54 +132,21 @@ ON CONFLICT (course_code) DO NOTHING;`;
 
         {/* Modal Body */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-4 text-xs">
-          {/* Supabase Primary Database Active Box */}
-          <div className="p-3.5 rounded-lg border bg-emerald-50 border-emerald-300 text-emerald-950">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="font-bold text-[13px] text-emerald-900">
-                  Supabase PostgreSQL Cloud Database: Active
-                </span>
-              </div>
-              <span className="text-[10px] font-mono bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold border border-emerald-200">
-                gvskmkwwwkstsndaqyxa.supabase.co
-              </span>
-            </div>
-            <p className="text-[11px] text-emerald-800 leading-relaxed mb-2.5">
-              Your application is connected to <strong>Supabase</strong>. All student records (including your SUT Student profile with 0.0 CH, 0.0 CGPA, and Pending Staff Evaluation) are synchronized in the live Supabase <code>public.students</code> table.
+          <div className={`p-3.5 rounded-lg border ${
+            testResult?.success
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+              : testResult
+                ? 'bg-red-50 border-red-300 text-red-950'
+                : 'bg-amber-50 border-amber-300 text-amber-950'
+          }`}>
+            <p className="font-bold text-[13px]">
+              {testResult
+                ? testResult.success ? 'Supabase database verified' : 'Supabase connection check failed'
+                : isConfigured ? 'Credentials configured; connection not verified' : 'Supabase not configured'}
             </p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pt-1">
-              {[
-                { name: 'students', status: '3 records (Active)', ok: true },
-                { name: 'courses', status: 'Needs SQL run', ok: false },
-                { name: 'enrollments', status: 'Needs SQL run', ok: false },
-                { name: 'attendance', status: 'Needs SQL run', ok: false },
-                { name: 'student_requests', status: 'Needs SQL run', ok: false },
-                { name: 'advisor_notes', status: 'Needs SQL run', ok: false },
-              ].map((t) => (
-                <div key={t.name} className={`flex items-center justify-between px-2 py-1 rounded border text-[10.5px] ${
-                  t.ok ? 'bg-white/80 border-emerald-200' : 'bg-amber-50/80 border-amber-200'
-                }`}>
-                  <span className="font-mono text-gray-800 font-semibold">{t.name}</span>
-                  <span className={`font-medium text-[10px] ${t.ok ? 'text-emerald-700' : 'text-amber-700 font-semibold'}`}>
-                    {t.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Cloud SQL Multi-Cloud Backup Box */}
-          <div className="p-3.5 rounded-lg border bg-blue-50/60 border-blue-200 text-blue-950 flex items-start gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-            <div className="text-[11.5px] leading-relaxed">
-              <p className="font-bold text-blue-900">
-                Google Cloud SQL (Dual-Cloud Replica): Connected
-              </p>
-              <p className="text-blue-800/80 mt-0.5">
-                Instance <code>ai-studio-50207e7d</code> (europe-west2) is also provisioned and kept in sync for redundancy.
-              </p>
-            </div>
+            <p className="text-[11px] mt-1">
+              {url ? `Project: ${(() => { try { return new URL(url).host; } catch { return url; } })()}` : 'Set a project URL and public anon/publishable key below.'}
+            </p>
           </div>
 
           {/* Test connection result notice */}
@@ -319,6 +163,16 @@ ON CONFLICT (course_code) DO NOTHING;`;
               )}
               <div className="flex-1 text-[11.5px]">
                 <p className="font-semibold">{testResult.message}</p>
+                {testResult.tables.length > 0 && (
+                  <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 mt-2">
+                    {testResult.tables.map((table) => (
+                      <li key={table.table} className="flex justify-between gap-2 py-0.5">
+                        <span className="font-mono">{table.table}</span>
+                        <span>{table.status === 'ready' ? 'Ready' : table.status === 'restricted' ? 'Protected' : table.status === 'missing' ? 'Missing' : 'Unavailable'}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
           )}
@@ -384,7 +238,7 @@ ON CONFLICT (course_code) DO NOTHING;`;
                 )}
               </button>
 
-              {isConnected && (
+              {isConfigured && (
                 <button
                   type="button"
                   onClick={handleDisconnect}
@@ -395,38 +249,6 @@ ON CONFLICT (course_code) DO NOTHING;`;
               )}
             </div>
 
-            {isConnected && (
-              <div className="pt-2 border-t border-gray-100 flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-gray-600">
-                    Sync local student accounts into your Supabase database:
-                  </span>
-                  <button
-                    type="button"
-                    disabled={syncing}
-                    onClick={handleSyncAll}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded font-bold text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    {syncing ? (
-                      <>
-                        <RefreshCw className="w-3 h-3 animate-spin" />
-                        <span>Syncing...</span>
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 className="w-3 h-3" />
-                        <span>Push All Students to Cloud</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-                {syncResult && (
-                  <p className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 p-2 rounded border border-emerald-200">
-                    {syncResult}
-                  </p>
-                )}
-              </div>
-            )}
           </form>
 
           {/* Quick SQL Schema Helper */}
@@ -446,7 +268,7 @@ ON CONFLICT (course_code) DO NOTHING;`;
               </button>
             </div>
             <p className="text-[11px] text-gray-500 mb-2">
-              Before syncing, run this script once in your <strong>Supabase Dashboard &gt; SQL Editor &gt; New query</strong> to create the tables.
+              For a new project, run this script in <strong>Supabase Dashboard &gt; SQL Editor</strong>. For an existing project, apply the versioned migrations instead.
             </p>
             <button
               type="button"
@@ -456,69 +278,7 @@ ON CONFLICT (course_code) DO NOTHING;`;
               {showSchema ? 'Hide SQL schema preview' : 'View SQL schema preview'}
             </button>
             {showSchema && (
-              <pre className="mt-2 p-2.5 bg-gray-900 text-gray-100 rounded text-[10px] font-mono overflow-x-auto max-h-48 leading-relaxed">
-{`-- Run in Supabase SQL Editor:
-CREATE TABLE IF NOT EXISTS public.courses (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    course_code VARCHAR(32) UNIQUE NOT NULL,
-    title VARCHAR(255) NOT NULL,
-    credit_hours INTEGER NOT NULL,
-    lecture_hours INTEGER DEFAULT 2,
-    lab_hours INTEGER DEFAULT 2,
-    department VARCHAR(128) NOT NULL,
-    level INTEGER DEFAULT 1,
-    semester INTEGER DEFAULT 1,
-    prerequisites TEXT[] DEFAULT '{}',
-    description TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS public.enrollments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id VARCHAR(32) REFERENCES public.students(student_id) ON DELETE CASCADE,
-    course_code VARCHAR(32) REFERENCES public.courses(course_code) ON DELETE CASCADE,
-    semester VARCHAR(64) DEFAULT 'Spring 2026',
-    status VARCHAR(32) DEFAULT 'registered',
-    grade VARCHAR(8),
-    points NUMERIC(3, 2),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    UNIQUE (student_id, course_code, semester)
-);
-
-CREATE TABLE IF NOT EXISTS public.attendance_records (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id VARCHAR(32) REFERENCES public.students(student_id) ON DELETE CASCADE,
-    course_code VARCHAR(32) REFERENCES public.courses(course_code) ON DELETE CASCADE,
-    total_sessions INTEGER DEFAULT 14,
-    attended_sessions INTEGER DEFAULT 14,
-    absent_sessions INTEGER DEFAULT 0,
-    percentage NUMERIC(5, 2) DEFAULT 100.0,
-    warning_status VARCHAR(32) DEFAULT 'Normal',
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    UNIQUE (student_id, course_code)
-);
-
-CREATE TABLE IF NOT EXISTS public.student_requests (
-    id VARCHAR(64) PRIMARY KEY,
-    student_id VARCHAR(32) REFERENCES public.students(student_id) ON DELETE CASCADE,
-    request_type VARCHAR(128) NOT NULL,
-    details TEXT NOT NULL,
-    status VARCHAR(32) DEFAULT 'Under Review',
-    submitted_date DATE DEFAULT CURRENT_DATE,
-    comments TEXT,
-    reviewed_by VARCHAR(255),
-    reviewed_at DATE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS public.advisor_notes (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id VARCHAR(32) REFERENCES public.students(student_id) ON DELETE CASCADE,
-    author VARCHAR(255) DEFAULT 'Dr. Tarek Abdel-Azim',
-    note TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);`}
-              </pre>
+              <pre className="mt-2 p-2.5 bg-gray-900 text-gray-100 rounded text-[10px] font-mono overflow-x-auto max-h-48 leading-relaxed">{schemaSql}</pre>
             )}
           </div>
         </div>

@@ -138,6 +138,7 @@ export interface UserAccount {
   id: string;
   email: string; // gmail or institutional email
   password?: string;
+  authProvider?: 'local' | 'supabase';
   role: 'student' | 'teacher' | 'admin';
   name: string;
   avatar?: string;
@@ -298,4 +299,3 @@ export interface SingleResponse<T> {
   data: T | null;
   error: string | null;
 }
-

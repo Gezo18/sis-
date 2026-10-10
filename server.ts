@@ -1,4 +1,5 @@
 import express from 'express';
+import { createServer as createHttpServer } from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -207,8 +208,8 @@ app.get('/api/security/audit', (req, res) => {
       role_enforcement: 'Active (Student Self-Scope + Teacher Multi-Scope)',
     },
     admin_auth: {
-      configured: true,
-      token_length: ADMIN_AUTH_TOKEN.length,
+      configured: Boolean(ADMIN_AUTH_TOKEN),
+      token_length: ADMIN_AUTH_TOKEN?.length ?? 0,
     },
     timestamp: new Date().toISOString(),
   });
@@ -251,6 +252,8 @@ app.use(globalErrorMiddleware);
 // VITE DEV MIDDLEWARE OR PRODUCTION STATIC SERVING
 // ----------------------------------------------------
 async function bootstrap() {
+  const httpServer = createHttpServer(app);
+
   if (isProd) {
     app.use(express.static(path.resolve(__dirname, 'dist')));
     app.get('*', (req, res) => {
@@ -262,13 +265,14 @@ async function bootstrap() {
         middlewareMode: true,
         host: '0.0.0.0',
         port: PORT,
+        hmr: process.env.DISABLE_HMR === 'true' ? false : { server: httpServer },
       },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`[SERVER] Elsewedy SUT Portal & API active on http://0.0.0.0:${PORT}`);
     console.log(`[SERVER] Lightweight health check: http://0.0.0.0:${PORT}/health`);
     console.log(`[SERVER] Deep backend health check: http://0.0.0.0:${PORT}/api/health/deep`);

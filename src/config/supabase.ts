@@ -1,4 +1,1 @@
-import { getSupabase } from '../lib/supabase';
-
-export const supabase = getSupabase();
-export { getSupabase };
+export { supabase, getSupabase } from '../lib/supabase';

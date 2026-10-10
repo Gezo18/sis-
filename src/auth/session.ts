@@ -1,8 +1,6 @@
 import { supabase } from '../config/supabase';
 import { AuthUser, Teacher, Admin, ApiResponse } from '../types';
 
-export const AUTH_STORAGE_KEY = 'sut_auth_session';
-
 export async function getCurrentUser(): Promise<AuthUser | null> {
   try {
     // 1. Check active Supabase auth session
@@ -43,26 +41,13 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
         };
       }
 
-      // Default role if authenticated: teacher if email matches, else admin
-      return {
-        id: user.id,
-        email: user.email || '',
-        role: user.email?.includes('admin') ? 'admin' : 'teacher',
-        name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Staff Member',
-      };
+      // Authenticated does not imply staff access. A public Auth account must
+      // have an explicit row in the corresponding role table.
+      await supabase.auth.signOut();
+      return null;
     }
   } catch (err) {
-    console.warn('Supabase auth session check fallback:', err);
-  }
-
-  // 2. Check local fallback session (for testing & offline demo mode)
-  try {
-    const local = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (local) {
-      return JSON.parse(local) as AuthUser;
-    }
-  } catch (e) {
-    console.error('Failed reading local session', e);
+    console.warn('Supabase auth session check failed:', err);
   }
 
   return null;
@@ -84,7 +69,6 @@ export async function signIn(email: string, password: string): Promise<ApiRespon
     if (data.user) {
       const user = await getCurrentUser();
       if (user) {
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
         return { data: user, error: null };
       }
     }
@@ -95,50 +79,11 @@ export async function signIn(email: string, password: string): Promise<ApiRespon
   }
 }
 
-function handleLocalOrMockLogin(email: string, _password: string, fallbackErrMsg: string): ApiResponse<AuthUser> {
-  const normEmail = email.toLowerCase().trim();
-  
-  // SUT Teacher Demo Accounts
-  if (normEmail.includes('hend') || normEmail.includes('staff') || normEmail.includes('azim') || normEmail.includes('teacher') || normEmail.endsWith('@sut.edu.eg')) {
-    const teacherUser: AuthUser = {
-      id: 'demo-teacher-hend',
-      email: normEmail || 'hend.fouad@sut.edu.eg',
-      role: 'teacher',
-      name: 'Hend Adel Ahmed Fouad',
-      teacherProfile: {
-        id: 't-101',
-        user_id: 'demo-teacher-hend',
-        first_name: 'Hend Adel Ahmed',
-        last_name: 'Fouad',
-        email: normEmail || 'hend.fouad@sut.edu.eg',
-        department: 'Field of Electrical Engineering & Computer Science',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    };
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(teacherUser));
-    return { data: teacherUser, error: null };
-  }
-
-  // SUT Admin Demo Account
-  if (normEmail.includes('admin') || normEmail === 'admin@sut.edu.eg') {
-    const adminUser: AuthUser = {
-      id: 'demo-admin-sut',
-      email: normEmail,
-      role: 'admin',
-      name: 'SUT Academic Affairs Administrator',
-      adminProfile: {
-        id: 'a-101',
-        user_id: 'demo-admin-sut',
-        email: normEmail,
-        created_at: new Date().toISOString(),
-      },
-    };
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(adminUser));
-    return { data: adminUser, error: null };
-  }
-
-  return { data: null, error: fallbackErrMsg || 'Invalid email or password.' };
+function handleLocalOrMockLogin(_email: string, _password: string, fallbackErrMsg: string): ApiResponse<AuthUser> {
+  return {
+    data: null,
+    error: fallbackErrMsg || 'Invalid email or password. Staff access requires a provisioned Supabase role.',
+  };
 }
 
 export async function signOut(): Promise<void> {
@@ -147,7 +92,6 @@ export async function signOut(): Promise<void> {
   } catch (e) {
     console.warn('Supabase signOut error', e);
   }
-  localStorage.removeItem(AUTH_STORAGE_KEY);
 }
 
 export async function signUpTeacher(
@@ -175,8 +119,9 @@ export async function signUpTeacher(
     }
 
     if (data.user) {
-      // Insert into public.teachers
-      await supabase.from('teachers').insert([
+      // Teacher rows are provisioned by an administrator; self-service role
+      // assignment is intentionally blocked by database policy.
+      const { error: profileError } = await supabase.from('teachers').insert([
         {
           user_id: data.user.id,
           first_name: firstName,
@@ -185,6 +130,10 @@ export async function signUpTeacher(
           department: department,
         },
       ]);
+      if (profileError) {
+        await supabase.auth.signOut();
+        return { data: null, error: `Auth account created, but teacher access must be provisioned by an administrator: ${profileError.message}` };
+      }
 
       const authUser: AuthUser = {
         id: data.user.id,
@@ -203,7 +152,6 @@ export async function signUpTeacher(
         },
       };
 
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
       return { data: authUser, error: null };
     }
 

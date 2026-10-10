@@ -4,6 +4,17 @@ import { SisStudentDataCard } from './SisStudentDataCard';
 import { examScheduleData } from '../../data/mockData';
 import { Calendar, Clock, MapPin, ShieldCheck, Printer } from 'lucide-react';
 
+function getExamStatus(item: (typeof examScheduleData)[number]) {
+  if (item.status !== 'Upcoming') return item.status;
+
+  const examDate = new Date(`${item.examDate}T00:00:00`);
+  if (Number.isNaN(examDate.getTime())) return item.status;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return examDate < today ? 'Completed' : item.status;
+}
+
 interface Props {
   student: StudentProfile;
 }
@@ -55,38 +66,43 @@ export const SisExamSchedule: React.FC<Props> = ({ student }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {examScheduleData.map((item) => (
-                  <tr key={item.courseCode} className="hover:bg-gray-50">
-                    <td className="p-2.5 font-bold font-mono text-[#0c4ca3]">{item.courseCode}</td>
-                    <td className="p-2.5 font-medium text-gray-800">{item.courseName}</td>
-                    <td className="p-2.5 font-semibold text-gray-700">
-                      <div className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-gray-400" />
-                        {item.examDate}
-                      </div>
-                    </td>
-                    <td className="p-2.5 text-gray-600">
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-gray-400" />
-                        {item.examTime}
-                      </div>
-                    </td>
-                    <td className="p-2.5 text-gray-700">
-                      <div className="flex items-center gap-1">
-                        <MapPin className="w-3 h-3 text-red-500 shrink-0" />
-                        {item.hall}
-                      </div>
-                    </td>
-                    <td className="p-2.5 text-center font-mono font-bold text-gray-800 bg-gray-50">
-                      {item.seatNumber}
-                    </td>
-                    <td className="p-2.5 text-center">
-                      <span className="px-2 py-0.5 rounded text-[10.5px] font-semibold bg-amber-100 text-amber-800">
-                        {item.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {examScheduleData.map((item) => {
+                  const status = getExamStatus(item);
+                  return (
+                    <tr key={item.courseCode} className="hover:bg-gray-50">
+                      <td className="p-2.5 font-bold font-mono text-[#0c4ca3]">{item.courseCode}</td>
+                      <td className="p-2.5 font-medium text-gray-800">{item.courseName}</td>
+                      <td className="p-2.5 font-semibold text-gray-700">
+                        <div className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-gray-400" />
+                          {item.examDate}
+                        </div>
+                      </td>
+                      <td className="p-2.5 text-gray-600">
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-gray-400" />
+                          {item.examTime}
+                        </div>
+                      </td>
+                      <td className="p-2.5 text-gray-700">
+                        <div className="flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-red-500 shrink-0" />
+                          {item.hall}
+                        </div>
+                      </td>
+                      <td className="p-2.5 text-center font-mono font-bold text-gray-800 bg-gray-50">
+                        {item.seatNumber}
+                      </td>
+                      <td className="p-2.5 text-center">
+                        <span className={`px-2 py-0.5 rounded text-[10.5px] font-semibold ${
+                          status === 'Completed' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

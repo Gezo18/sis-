@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { apmTracker } from './apmTracker.js';
 
 // Configurable Admin Token
-export const ADMIN_AUTH_TOKEN = process.env.HEALTH_ADMIN_TOKEN || 'sut_admin_sec_9aba2480_key';
+export const ADMIN_AUTH_TOKEN = process.env.HEALTH_ADMIN_TOKEN;
 
 /**
  * Admin Authentication Middleware
@@ -20,18 +20,13 @@ export function requireAdminAuth(req: Request, res: Response, next: NextFunction
     providedToken = customHeader.trim();
   }
 
-  // Accept configured admin token or teacher/admin session indicator
-  const isValid =
-    providedToken === ADMIN_AUTH_TOKEN ||
-    providedToken === 'admin' ||
-    providedToken === 'faculty_lead' ||
-    (req.headers['x-user-role'] === 'teacher');
+  const isValid = Boolean(ADMIN_AUTH_TOKEN) && providedToken === ADMIN_AUTH_TOKEN;
 
   if (!isValid) {
     res.status(401).json({
       error: 'Unauthorized Access',
       message: 'Admin authentication required to access deep diagnostic telemetry.',
-      required_auth: 'Provide valid Bearer <token> or X-Admin-Key header.',
+      required_auth: 'Provide a valid Bearer token or X-Admin-Key header.',
       timestamp: new Date().toISOString(),
     });
     return;
@@ -39,6 +34,7 @@ export function requireAdminAuth(req: Request, res: Response, next: NextFunction
 
   next();
 }
+
 
 /**
  * Row-Level Security (RLS) & IDOR Protection Middleware
@@ -47,31 +43,36 @@ export function requireAdminAuth(req: Request, res: Response, next: NextFunction
  */
 export function enforceRowLevelSecurity(req: Request, res: Response, next: NextFunction): void {
   const targetStudentId = req.params.studentId || req.query.studentId || req.body?.studentId;
-  const userRole = req.headers['x-user-role'] as string;
-  const authenticatedUserId = req.headers['x-authenticated-id'] as string;
+  const userRole = req.headers['x-user-role'] as string | undefined;
+  const authenticatedUserId = req.headers['x-authenticated-id'] as string | undefined;
 
-  // If endpoint is not student-scoped, continue
   if (!targetStudentId) {
     return next();
   }
 
-  // Faculty and Advisors have legitimate academic supervision access
   if (userRole === 'teacher' || userRole === 'admin') {
     return next();
   }
 
-  // If student role, verify target ID matches their own authenticated identity
-  if (userRole === 'student' && authenticatedUserId && authenticatedUserId !== targetStudentId) {
-    res.status(403).json({
-      error: 'Forbidden - IDOR Violation Prevented',
-      message: 'Access denied: Students are restricted by Row-Level Security to their own academic records.',
-      timestamp: new Date().toISOString(),
-    });
-    return;
+  if (userRole === 'student') {
+    if (!authenticatedUserId || authenticatedUserId !== targetStudentId) {
+      res.status(403).json({
+        error: 'Forbidden - IDOR Violation Prevented',
+        message: 'Access denied: Students are restricted by Row-Level Security to their own academic records.',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+    return next();
   }
 
-  next();
+  res.status(403).json({
+    error: 'Forbidden - Missing Role Context',
+    message: 'Access denied: Student-scoped requests require a verified role and authenticated identity.',
+    timestamp: new Date().toISOString(),
+  });
 }
+
 
 /**
  * Maximum HTTP Security Headers Middleware
@@ -93,14 +94,21 @@ export function applySecurityHeaders(req: Request, res: Response, next: NextFunc
   // Content-Security-Policy
   // Note: We allow 'self' and preview container host so the app functions within Google AI Studio preview iframe,
   // while blocking arbitrary untrusted script injection.
+  // Vite injects a React refresh preamble only in development; keep production CSP strict.
+  const scriptSources = [
+    "script-src 'self'",
+    ...(process.env.NODE_ENV === 'production' ? [] : ["'unsafe-inline'"]),
+    'https://apis.google.com',
+    'https://accounts.google.com',
+  ];
   const cspDirectives = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://accounts.google.com",
+    scriptSources.join(' '),
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
     "img-src 'self' data: https: blob:",
     "connect-src 'self' https: wss: ws:",
-    "frame-ancestors 'self' https: *",
+    "frame-ancestors 'self'",
     "object-src 'none'",
     "base-uri 'self'",
   ].join('; ');

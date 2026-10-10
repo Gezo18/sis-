@@ -4,7 +4,7 @@
  */
 
 const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3000';
-const ADMIN_TOKEN = process.env.HEALTH_ADMIN_TOKEN || 'sut_admin_sec_9aba2480_key';
+const ADMIN_TOKEN = process.env.HEALTH_ADMIN_TOKEN;
 
 interface CrawlResult {
   url: string;
@@ -55,29 +55,33 @@ async function runSiteCrawler() {
       totalErrors++;
     }
 
-    // Test with admin credentials
-    const t0 = performance.now();
-    const deepRes = await fetch(`${BASE_URL}/api/health/deep`, {
-      headers: {
-        Authorization: `Bearer ${ADMIN_TOKEN}`,
-      },
-    });
-    const duration = Math.round(performance.now() - t0);
-    const deepData = await deepRes.json();
-
-    if (deepRes.status === 200 || deepRes.status === 503) {
-      console.log(`  ✅ /api/health/deep returned HTTP ${deepRes.status} in ${duration}ms`);
-      console.log(`     - Status: ${deepData.status.toUpperCase()}`);
-      console.log(`     - Primary DB: ${deepData.services.primary_db.status} (${deepData.services.primary_db.latency_ms}ms)`);
-      console.log(`     - Read Replica: ${deepData.services.read_replica_db.status} (${deepData.services.read_replica_db.latency_ms}ms)`);
-      console.log(`     - Redis Cache: ${deepData.services.redis_cache.status} (${deepData.services.redis_cache.latency_ms}ms)`);
-      console.log(`     - Job Queue: ${deepData.services.job_queue.status} (${deepData.services.job_queue.latency_ms}ms)`);
-      console.log(`     - Storage: ${deepData.services.storage_bucket.status} (${deepData.services.storage_bucket.latency_ms}ms)`);
-      console.log(`     - 3rd-Party APIs: ${deepData.services.third_party_apis.status} (${deepData.services.third_party_apis.latency_ms}ms)`);
-      console.log(`     - Passed Checks: ${deepData.summary.passed}/${deepData.summary.total_checks}`);
+        // Test with admin credentials if configured
+    if (!ADMIN_TOKEN) {
+      console.warn('  ?? Skipping authenticated deep-health probe because HEALTH_ADMIN_TOKEN is not configured.');
     } else {
-      console.error(`  ❌ /api/health/deep failed with status ${deepRes.status}:`, deepData);
-      totalErrors++;
+      const t0 = performance.now();
+      const deepRes = await fetch(`${BASE_URL}/api/health/deep`, {
+        headers: {
+          Authorization: `Bearer ${ADMIN_TOKEN}`,
+        },
+      });
+      const duration = Math.round(performance.now() - t0);
+      const deepData = await deepRes.json();
+
+      if (deepRes.status === 200 || deepRes.status === 503) {
+        console.log(`  ? /api/health/deep returned HTTP ${deepRes.status} in ${duration}ms`);
+        console.log(`     - Status: ${deepData.status.toUpperCase()}`);
+        console.log(`     - Primary DB: ${deepData.services.primary_db.status} (${deepData.services.primary_db.latency_ms}ms)`);
+        console.log(`     - Read Replica: ${deepData.services.read_replica_db.status} (${deepData.services.read_replica_db.latency_ms}ms)`);
+        console.log(`     - Redis Cache: ${deepData.services.redis_cache.status} (${deepData.services.redis_cache.latency_ms}ms)`);
+        console.log(`     - Job Queue: ${deepData.services.job_queue.status} (${deepData.services.job_queue.latency_ms}ms)`);
+        console.log(`     - Storage: ${deepData.services.storage_bucket.status} (${deepData.services.storage_bucket.latency_ms}ms)`);
+        console.log(`     - 3rd-Party APIs: ${deepData.services.third_party_apis.status} (${deepData.services.third_party_apis.latency_ms}ms)`);
+        console.log(`     - Passed Checks: ${deepData.summary.passed}/${deepData.summary.total_checks}`);
+      } else {
+        console.error(`  ? /api/health/deep failed with status ${deepRes.status}:`, deepData);
+        totalErrors++;
+      }
     }
   } catch (err) {
     console.error(`  ❌ /api/health/deep connection failed:`, err);
