@@ -265,11 +265,15 @@ export const SisAcademicPlan: React.FC<Props> = ({ student, currentUser, onDataU
     return { label: 'Academic Warning / Probation (Under 2.00)', bg: 'bg-red-100 text-red-900 border-red-300' };
   };
 
-  const filteredCourses = courses.filter(c => {
-    if (selectedLevel !== 'all' && c.level !== selectedLevel) return false;
-    if (selectedStatus !== 'all' && c.status !== selectedStatus) return false;
-    return true;
-  });
+  // Performance optimization: Memoize academic plan course list filtering
+  // Avoids redundant course array filtering during interactive GPA calculator manipulations
+  const filteredCourses = useMemo(() => {
+    return courses.filter(c => {
+      if (selectedLevel !== 'all' && c.level !== selectedLevel) return false;
+      if (selectedStatus !== 'all' && c.status !== selectedStatus) return false;
+      return true;
+    });
+  }, [courses, selectedLevel, selectedStatus]);
 
   return (
     <div className="flex-1 bg-white min-h-[calc(100vh-60px)] flex flex-col font-sans">
