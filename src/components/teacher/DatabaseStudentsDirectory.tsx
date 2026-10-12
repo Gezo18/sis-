@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { UserAccount, Course } from '../../types';
 import { userStore } from '../../data/userStore';
 import { 
@@ -118,64 +118,67 @@ export const DatabaseStudentsDirectory: React.FC<Props> = ({
     }
   };
 
-  // Filter students
-  const filteredStudents = students.filter(s => {
-    const profile = s.studentProfile;
-    if (!profile) return false;
+  // ⚡ Bolt Optimization: Memoize student directory filtering & hoist invariant string operations.
+  // Pre-processing query terms outside the loop prevents redundant lowercasing and regex/string splits
+  // on every iteration for every student item. Wrapping in useMemo prevents full filter recalculations
+  // when unrelated local component states change (e.g. toast updates or modal visibility toggles).
+  const filteredStudents = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const progLower = selectedProgram !== 'All' ? selectedProgram.toLowerCase() : '';
+    const teacherEmailLower = teacherEmail.toLowerCase();
+    const cleanCourseFilter = courseFilter !== 'All' ? courseFilter.split('-')[0].trim().toUpperCase() : '';
+    const isHend = teacherName.includes('Hend');
 
-    // Search query
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      const matchName = s.name.toLowerCase().includes(q) || profile.studentName.toLowerCase().includes(q);
-      const matchId = profile.studentId.toLowerCase().includes(q);
-      const matchEmail = s.email.toLowerCase().includes(q);
-      if (!matchName && !matchId && !matchEmail) return false;
-    }
+    return students.filter(s => {
+      const profile = s.studentProfile;
+      if (!profile) return false;
 
-    // Program
-    if (selectedProgram !== 'All') {
-      if (!profile.studentProgram.toLowerCase().includes(selectedProgram.toLowerCase())) {
-        return false;
+      // Search query filter
+      if (q) {
+        const matchName = s.name.toLowerCase().includes(q) || profile.studentName.toLowerCase().includes(q);
+        const matchId = profile.studentId.toLowerCase().includes(q);
+        const matchEmail = s.email.toLowerCase().includes(q);
+        if (!matchName && !matchId && !matchEmail) return false;
       }
-    }
 
-    // Level
-    if (selectedLevel !== 'All') {
-      if (profile.level !== selectedLevel) return false;
-    }
+      // Program filter
+      if (selectedProgram !== 'All') {
+        if (!profile.studentProgram.toLowerCase().includes(progLower)) {
+          return false;
+        }
+      }
 
-    // Advisor filter
-    if (advisorFilter === 'my-advisees') {
-      const isMyAdvisee = profile.advisorName.includes(teacherName) || 
-        profile.advisorEmail?.toLowerCase() === teacherEmail.toLowerCase() ||
-        (teacherName.includes('Hend') && profile.advisorName.includes('Hend'));
-      if (!isMyAdvisee) return false;
-    } else if (advisorFilter === 'unassigned') {
-      const isUnassigned = !profile.advisorName || 
-        profile.advisorName.includes('Pending') || 
-        profile.advisorName.includes('Unassigned');
-      if (!isUnassigned) return false;
-    } else if (advisorFilter === 'others') {
-      const isMyAdvisee = profile.advisorName.includes(teacherName) || 
-        profile.advisorEmail?.toLowerCase() === teacherEmail.toLowerCase() ||
-        (teacherName.includes('Hend') && profile.advisorName.includes('Hend'));
-      const isUnassigned = !profile.advisorName || 
-        profile.advisorName.includes('Pending') || 
-        profile.advisorName.includes('Unassigned');
-      if (isMyAdvisee || isUnassigned) return false;
-    }
+      // Level filter
+      if (selectedLevel !== 'All') {
+        if (profile.level !== selectedLevel) return false;
+      }
 
-    // Course filter
-    if (courseFilter !== 'All') {
-      const cleanFilter = courseFilter.split('-')[0].trim().toUpperCase();
-      const isEnrolled = s.courses?.some(c => 
-        c.code.toUpperCase() === cleanFilter && (c.status === 'registered' || c.status === 'passed')
-      );
-      if (!isEnrolled) return false;
-    }
+      // Advisor filter
+      if (advisorFilter !== 'all') {
+        const advisorNameStr = profile.advisorName || '';
+        const isMyAdvisee = advisorNameStr.includes(teacherName) ||
+          (profile.advisorEmail?.toLowerCase() === teacherEmailLower) ||
+          (isHend && advisorNameStr.includes('Hend'));
+        const isUnassigned = !advisorNameStr ||
+          advisorNameStr.includes('Pending') ||
+          advisorNameStr.includes('Unassigned');
 
-    return true;
-  });
+        if (advisorFilter === 'my-advisees' && !isMyAdvisee) return false;
+        if (advisorFilter === 'unassigned' && !isUnassigned) return false;
+        if (advisorFilter === 'others' && (isMyAdvisee || isUnassigned)) return false;
+      }
+
+      // Course filter
+      if (courseFilter !== 'All') {
+        const isEnrolled = s.courses?.some(c =>
+          c.code.toUpperCase() === cleanCourseFilter && (c.status === 'registered' || c.status === 'passed')
+        );
+        if (!isEnrolled) return false;
+      }
+
+      return true;
+    });
+  }, [students, searchQuery, selectedProgram, selectedLevel, advisorFilter, courseFilter, teacherName, teacherEmail]);
 
   return (
     <div className="space-y-4">
@@ -361,12 +364,13 @@ export const DatabaseStudentsDirectory: React.FC<Props> = ({
               ) : (
                 filteredStudents.map((stud, idx) => {
                   const profile = stud.studentProfile!;
-                  const isMyAdvisee = profile.advisorName.includes(teacherName) || 
+                  const advisorName = profile.advisorName || '';
+                  const isMyAdvisee = advisorName.includes(teacherName) ||
                     profile.advisorEmail?.toLowerCase() === teacherEmail.toLowerCase() ||
-                    (teacherName.includes('Hend') && profile.advisorName.includes('Hend'));
-                  const isUnassigned = !profile.advisorName || 
-                    profile.advisorName.includes('Pending') || 
-                    profile.advisorName.includes('Unassigned');
+                    (teacherName.includes('Hend') && advisorName.includes('Hend'));
+                  const isUnassigned = !advisorName ||
+                    advisorName.includes('Pending') ||
+                    advisorName.includes('Unassigned');
 
                   // Check which teacher courses student is registered in
                   const enrolledTeacherCourses = (stud.courses || []).filter(c => 
