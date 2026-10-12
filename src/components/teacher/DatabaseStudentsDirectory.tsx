@@ -155,12 +155,13 @@ export const DatabaseStudentsDirectory: React.FC<Props> = ({
 
       // Advisor filter
       if (advisorFilter !== 'all') {
-        const isMyAdvisee = profile.advisorName.includes(teacherName) ||
-          profile.advisorEmail?.toLowerCase() === teacherEmailLower ||
-          (isHend && profile.advisorName.includes('Hend'));
-        const isUnassigned = !profile.advisorName ||
-          profile.advisorName.includes('Pending') ||
-          profile.advisorName.includes('Unassigned');
+        const advisorNameStr = profile.advisorName || '';
+        const isMyAdvisee = advisorNameStr.includes(teacherName) ||
+          (profile.advisorEmail?.toLowerCase() === teacherEmailLower) ||
+          (isHend && advisorNameStr.includes('Hend'));
+        const isUnassigned = !advisorNameStr ||
+          advisorNameStr.includes('Pending') ||
+          advisorNameStr.includes('Unassigned');
 
         if (advisorFilter === 'my-advisees' && !isMyAdvisee) return false;
         if (advisorFilter === 'unassigned' && !isUnassigned) return false;
@@ -363,12 +364,13 @@ export const DatabaseStudentsDirectory: React.FC<Props> = ({
               ) : (
                 filteredStudents.map((stud, idx) => {
                   const profile = stud.studentProfile!;
-                  const isMyAdvisee = profile.advisorName.includes(teacherName) || 
+                  const advisorName = profile.advisorName || '';
+                  const isMyAdvisee = advisorName.includes(teacherName) ||
                     profile.advisorEmail?.toLowerCase() === teacherEmail.toLowerCase() ||
-                    (teacherName.includes('Hend') && profile.advisorName.includes('Hend'));
-                  const isUnassigned = !profile.advisorName || 
-                    profile.advisorName.includes('Pending') || 
-                    profile.advisorName.includes('Unassigned');
+                    (teacherName.includes('Hend') && advisorName.includes('Hend'));
+                  const isUnassigned = !advisorName ||
+                    advisorName.includes('Pending') ||
+                    advisorName.includes('Unassigned');
 
                   // Check which teacher courses student is registered in
                   const enrolledTeacherCourses = (stud.courses || []).filter(c => 
