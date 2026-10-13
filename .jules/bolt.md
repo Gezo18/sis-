@@ -1,0 +1,3 @@
+## 2026-10-13 - Memoizing List Filtering with Hoisted Invariants
+**Learning:** In React components rendering tabular data, re-evaluating array `.filter()` loops on unrelated renders (such as typing in chat or updating toast state) causes unnecessary CPU work, especially when loop-invariant string operations like `.toLowerCase()`, `.trim()`, and string splits are computed inside the array callback. Unconditional string method calls inside filter loops can also throw if optional fields are undefined.
+**Action:** Always wrap filter calculations in `useMemo`, hoist loop-invariant transformations outside the `.filter()` callback, and guard optional fields with fallback strings or optional chaining.
