@@ -369,18 +369,28 @@ const defaultUsers: UserAccount[] = [
   },
 ];
 
+// Bolt ⚡ Optimization: In-memory cache for parsed user accounts to prevent redundant
+// localStorage reads and JSON deserialization on every query/render.
+let cachedUsers: UserAccount[] | null = null;
 let inMemoryUsers: UserAccount[] = [...defaultUsers];
 let inMemoryCurrentUserId: string | null = null;
 
 export const userStore = {
   getUsers(): UserAccount[] {
+    // Return cached user array if already populated in memory
+    if (cachedUsers) {
+      return cachedUsers;
+    }
+
     try {
       if (typeof localStorage === 'undefined') {
+        cachedUsers = inMemoryUsers;
         return inMemoryUsers;
       }
       const stored = localStorage.getItem(USERS_STORAGE_KEY);
       if (!stored) {
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(defaultUsers));
+        cachedUsers = defaultUsers;
         return defaultUsers;
       }
       let users: UserAccount[] = JSON.parse(stored);
@@ -406,14 +416,17 @@ export const userStore = {
       if (changed) {
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
       }
+      cachedUsers = users;
       return users;
     } catch {
+      cachedUsers = defaultUsers;
       return defaultUsers;
     }
   },
 
   saveUsers(users: UserAccount[]): void {
     inMemoryUsers = users;
+    cachedUsers = users; // Keep cache in sync on updates
     try {
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
@@ -1350,6 +1363,7 @@ export const userStore = {
    * Reset data back to default initial seed
    */
   resetToDefaults(): void {
+    cachedUsers = null;
     localStorage.removeItem(USERS_STORAGE_KEY);
     localStorage.removeItem(CURRENT_USER_ID_KEY);
   }
