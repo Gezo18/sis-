@@ -390,14 +390,16 @@ export const userStore = {
 
     try {
       if (typeof localStorage === 'undefined') {
-        inMemoryUsersCache = JSON.parse(JSON.stringify(defaultUsers));
-        return inMemoryUsersCache;
+        const users: UserAccount[] = JSON.parse(JSON.stringify(defaultUsers));
+        inMemoryUsersCache = users;
+        return users;
       }
       const stored = localStorage.getItem(USERS_STORAGE_KEY);
       if (!stored) {
-        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(defaultUsers));
-        inMemoryUsersCache = JSON.parse(JSON.stringify(defaultUsers));
-        return inMemoryUsersCache;
+        const users: UserAccount[] = JSON.parse(JSON.stringify(defaultUsers));
+        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+        inMemoryUsersCache = users;
+        return users;
       }
       let users: UserAccount[] = JSON.parse(stored);
       // Ensure any fake teacher accounts are purged
@@ -423,10 +425,11 @@ export const userStore = {
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
       }
       inMemoryUsersCache = users;
-      return inMemoryUsersCache;
+      return users;
     } catch {
-      inMemoryUsersCache = JSON.parse(JSON.stringify(defaultUsers));
-      return inMemoryUsersCache;
+      const users: UserAccount[] = JSON.parse(JSON.stringify(defaultUsers));
+      inMemoryUsersCache = users;
+      return users;
     }
   },
 
