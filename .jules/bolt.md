@@ -1,0 +1,3 @@
+## 2026-03-30 - Memoization of Unfiltered Student Roster Computations
+**Learning:** In large dashboard components like `DatabaseStudentsDirectory` and `StaffSisPortal`, complex filtering operations over student rosters (including string normalizations and array search passes) were executing on every component re-render. Unrelated state changes (e.g., chat input updates, toast notifications, modal toggles) triggered unnecessary re-filtering.
+**Action:** Use `useMemo` for derived filter lists like `filteredStudents` and `adviseeResults` with exact dependency arrays to eliminate redundant calculations.
