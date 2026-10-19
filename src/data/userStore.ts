@@ -372,16 +372,27 @@ const defaultUsers: UserAccount[] = [
 let inMemoryUsers: UserAccount[] = [...defaultUsers];
 let inMemoryCurrentUserId: string | null = null;
 
+// In-memory cache for parsed user accounts to avoid expensive synchronous
+// localStorage.getItem and JSON.parse operations on every render / lookup
+let cachedUsers: UserAccount[] | null = null;
+
 export const userStore = {
   getUsers(): UserAccount[] {
+    // Return in-memory cached users if available
+    if (cachedUsers) {
+      return cachedUsers;
+    }
+
     try {
       if (typeof localStorage === 'undefined') {
-        return inMemoryUsers;
+        cachedUsers = inMemoryUsers;
+        return cachedUsers;
       }
       const stored = localStorage.getItem(USERS_STORAGE_KEY);
       if (!stored) {
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(defaultUsers));
-        return defaultUsers;
+        cachedUsers = defaultUsers;
+        return cachedUsers;
       }
       let users: UserAccount[] = JSON.parse(stored);
       // Ensure any fake teacher accounts are purged
@@ -406,14 +417,17 @@ export const userStore = {
       if (changed) {
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
       }
-      return users;
+      cachedUsers = users;
+      return cachedUsers;
     } catch {
-      return defaultUsers;
+      cachedUsers = defaultUsers;
+      return cachedUsers;
     }
   },
 
   saveUsers(users: UserAccount[]): void {
     inMemoryUsers = users;
+    cachedUsers = users;
     try {
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
@@ -1350,6 +1364,7 @@ export const userStore = {
    * Reset data back to default initial seed
    */
   resetToDefaults(): void {
+    cachedUsers = null;
     localStorage.removeItem(USERS_STORAGE_KEY);
     localStorage.removeItem(CURRENT_USER_ID_KEY);
   }
