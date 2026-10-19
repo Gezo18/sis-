@@ -372,25 +372,26 @@ const defaultUsers: UserAccount[] = [
 let inMemoryUsers: UserAccount[] = [...defaultUsers];
 let inMemoryCurrentUserId: string | null = null;
 
-// In-memory cache for parsed user accounts to avoid expensive synchronous
-// localStorage.getItem and JSON.parse operations on every render / lookup
+// Cache raw JSON string and parsed user objects to avoid redundant JSON.parse
+// deserialization on every render, while safely re-parsing if localStorage changes.
+let cachedRawJson: string | null = null;
 let cachedUsers: UserAccount[] | null = null;
 
 export const userStore = {
   getUsers(): UserAccount[] {
-    // Return in-memory cached users if available
-    if (cachedUsers) {
-      return cachedUsers;
-    }
-
     try {
       if (typeof localStorage === 'undefined') {
-        cachedUsers = inMemoryUsers;
-        return cachedUsers;
+        return inMemoryUsers;
       }
       const stored = localStorage.getItem(USERS_STORAGE_KEY);
+      // Fast path: if raw string matches cache, avoid expensive JSON.parse
+      if (stored !== null && stored === cachedRawJson && cachedUsers !== null) {
+        return cachedUsers;
+      }
       if (!stored) {
-        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(defaultUsers));
+        const defaultStr = JSON.stringify(defaultUsers);
+        localStorage.setItem(USERS_STORAGE_KEY, defaultStr);
+        cachedRawJson = defaultStr;
         cachedUsers = defaultUsers;
         return cachedUsers;
       }
@@ -415,7 +416,11 @@ export const userStore = {
         }
       });
       if (changed) {
-        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+        const updatedStr = JSON.stringify(users);
+        localStorage.setItem(USERS_STORAGE_KEY, updatedStr);
+        cachedRawJson = updatedStr;
+      } else {
+        cachedRawJson = stored;
       }
       cachedUsers = users;
       return cachedUsers;
@@ -430,7 +435,9 @@ export const userStore = {
     cachedUsers = users;
     try {
       if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+        const str = JSON.stringify(users);
+        localStorage.setItem(USERS_STORAGE_KEY, str);
+        cachedRawJson = str;
       }
     } catch (e) {
       console.error('Failed to save users to localStorage', e);
@@ -1364,6 +1371,7 @@ export const userStore = {
    * Reset data back to default initial seed
    */
   resetToDefaults(): void {
+    cachedRawJson = null;
     cachedUsers = null;
     localStorage.removeItem(USERS_STORAGE_KEY);
     localStorage.removeItem(CURRENT_USER_ID_KEY);
