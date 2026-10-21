@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { UserAccount, StudentProfile, Course, AttendanceRecord } from '../../types';
 import { userStore } from '../../data/userStore';
 import { SutLogo } from '../common/SutLogo';
@@ -255,39 +255,54 @@ export const StaffSisPortal: React.FC<Props> = ({
     setNewMsgText('');
   };
 
-  // Filter students for Student Register Course: only students enrolled in selectedCourse!
-  const courseCodeClean = selectedCourse.split('-')[0].trim().toUpperCase();
-  const filteredStudents = sutStudents.filter(s => {
-    const isEnrolled = s.courses && s.courses.some(c => 
-      c.code.toUpperCase() === courseCodeClean && (c.status === 'registered' || c.status === 'passed')
-    );
-    if (!isEnrolled) return false;
+  // ⚡ Bolt Optimization: Memoize filtered students list for Student Register Course
+  // Prevents re-executing array filter and string matching operations on unrelated state changes (e.g., chat messages, modal toggles)
+  const filteredStudents = useMemo(() => {
+    const courseCodeClean = selectedCourse.split('-')[0].trim().toUpperCase();
+    return sutStudents.filter(s => {
+      const isEnrolled = s.courses && s.courses.some(c =>
+        c.code.toUpperCase() === courseCodeClean && (c.status === 'registered' || c.status === 'passed')
+      );
+      if (!isEnrolled) return false;
 
-    if (studentSearchQuery) {
-      const q = studentSearchQuery.toLowerCase();
-      return s.name.toLowerCase().includes(q) || s.studentId.includes(q) || s.email.toLowerCase().includes(q);
-    }
-    return true;
-  });
+      if (studentSearchQuery) {
+        const q = studentSearchQuery.toLowerCase();
+        return s.name.toLowerCase().includes(q) || s.studentId.includes(q) || s.email.toLowerCase().includes(q);
+      }
+      return true;
+    });
+  }, [sutStudents, selectedCourse, studentSearchQuery]);
 
-  // Filter advisees for Academic Advising: based on actual student accounts the advisor has added/assigned!
-  const adviseeResults = sutStudents.filter(s => {
-    // Only students where advisor matches this teacher
-    const isAssignedToThisTeacher = s.advisorName && (
-      s.advisorName.includes(teacherName) || 
-      (teacherName.includes('Hend') && s.advisorName.includes('Hend')) ||
-      (s.advisorEmail && s.advisorEmail.toLowerCase() === teacherEmail.toLowerCase())
-    );
-    if (!isAssignedToThisTeacher) return false;
+  // ⚡ Bolt Optimization: Memoize advisee filter results for Academic Advising
+  // Prevents re-executing complex filter conditions on unrelated re-renders
+  const adviseeResults = useMemo(() => {
+    return sutStudents.filter(s => {
+      // Only students where advisor matches this teacher
+      const isAssignedToThisTeacher = s.advisorName && (
+        s.advisorName.includes(teacherName) ||
+        (teacherName.includes('Hend') && s.advisorName.includes('Hend')) ||
+        (s.advisorEmail && s.advisorEmail.toLowerCase() === teacherEmail.toLowerCase())
+      );
+      if (!isAssignedToThisTeacher) return false;
 
-    if (advisingStudentId && !s.studentId.includes(advisingStudentId.trim())) return false;
-    if (advisingStudentName && !s.name.toLowerCase().includes(advisingStudentName.toLowerCase().trim())) return false;
-    if (advisingCgpaMin && s.cgpa < parseFloat(advisingCgpaMin)) return false;
-    if (advisingCgpaMax && s.cgpa > parseFloat(advisingCgpaMax)) return false;
-    if (advisingBlockFilter === 'block' && !s.blocked) return false;
-    if (advisingBlockFilter === 'unblock' && s.blocked) return false;
-    return true;
-  });
+      if (advisingStudentId && !s.studentId.includes(advisingStudentId.trim())) return false;
+      if (advisingStudentName && !s.name.toLowerCase().includes(advisingStudentName.toLowerCase().trim())) return false;
+      if (advisingCgpaMin && s.cgpa < parseFloat(advisingCgpaMin)) return false;
+      if (advisingCgpaMax && s.cgpa > parseFloat(advisingCgpaMax)) return false;
+      if (advisingBlockFilter === 'block' && !s.blocked) return false;
+      if (advisingBlockFilter === 'unblock' && s.blocked) return false;
+      return true;
+    });
+  }, [
+    sutStudents,
+    teacherName,
+    teacherEmail,
+    advisingStudentId,
+    advisingStudentName,
+    advisingCgpaMin,
+    advisingCgpaMax,
+    advisingBlockFilter
+  ]);
 
   return (
     <div className="min-h-screen bg-[#eaedf1] text-[#222933] flex flex-col font-sans text-xs select-none">
