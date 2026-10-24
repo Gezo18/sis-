@@ -7,20 +7,21 @@ interface Props {
   onOpenSisToRegister?: (courseCode: string) => void;
 }
 
+// Performance optimization: move static department metadata outside component to prevent re-creating array on every render
+const DEPARTMENTS = [
+  { id: 'all', label: 'All Departments' },
+  { id: 'Computer Science Technology', label: 'Computer Science Technology' },
+  { id: 'Engineering Technology', label: 'Engineering Technology & Microcontrollers' },
+  { id: 'Basic Sciences', label: 'Basic Sciences & Mathematics' },
+  { id: 'Humanities', label: 'Humanities & Industrial Management' },
+];
+
 export const CourseCatalog: React.FC<Props> = ({ onOpenSisToRegister }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('all');
   const [selectedLevel, setSelectedLevel] = useState<number | 'all'>('all');
   const [selectedCourseModal, setSelectedCourseModal] = useState<Course | null>(null);
   const [wishlist, setWishlist] = useState<string[]>([]);
-
-  const departments = [
-    { id: 'all', label: 'All Departments' },
-    { id: 'Computer Science Technology', label: 'Computer Science Technology' },
-    { id: 'Engineering Technology', label: 'Engineering Technology & Microcontrollers' },
-    { id: 'Basic Sciences', label: 'Basic Sciences & Mathematics' },
-    { id: 'Humanities', label: 'Humanities & Industrial Management' },
-  ];
 
   const filteredCourses = useMemo(() => {
     return academicPlanCourses.filter((course) => {
@@ -96,7 +97,7 @@ export const CourseCatalog: React.FC<Props> = ({ onOpenSisToRegister }) => {
               onChange={(e) => setSelectedDept(e.target.value)}
               className="w-full py-2 px-3 bg-gray-50 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 focus:ring-2 focus:ring-blue-500"
             >
-              {departments.map(d => (
+              {DEPARTMENTS.map(d => (
                 <option key={d.id} value={d.id}>{d.label}</option>
               ))}
             </select>
