@@ -1,7 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { CampusEvent } from '../../types';
 import { campusEvents } from '../../data/mockData';
 import { Calendar, Clock, MapPin, Tag, Users, CheckCircle2, Download, Share2, ChevronLeft, ChevronRight } from 'lucide-react';
+
+// Static constants hoisted outside render function to avoid repeated allocations
+const CATEGORIES = ['All', 'Academic', 'Workshop', 'Career', 'Sports'];
+const DAYS_IN_OCTOBER = Array.from({ length: 31 }, (_, i) => i + 1);
 
 export const EventCalendar: React.FC = () => {
   const [events, setEvents] = useState<CampusEvent[]>(campusEvents);
@@ -11,12 +15,26 @@ export const EventCalendar: React.FC = () => {
   const [rsvpEvents, setRsvpEvents] = useState<string[]>([]);
   const [currentMonth, setCurrentMonth] = useState<string>('October 2026');
 
-  const categories = ['All', 'Academic', 'Workshop', 'Career', 'Sports'];
+  // ⚡ Bolt Optimization: Memoize filtered events by category
+  const filteredEvents = useMemo(() => {
+    return events.filter(e => {
+      if (selectedCategory === 'All') return true;
+      return e.category === selectedCategory;
+    });
+  }, [events, selectedCategory]);
 
-  const filteredEvents = events.filter(e => {
-    if (selectedCategory === 'All') return true;
-    return e.category === selectedCategory;
-  });
+  // ⚡ Bolt Optimization: Index filtered events by date into a lookup map (Record<string, CampusEvent[]>)
+  // This turns 31 array .filter() operations inside the calendar grid render loop into O(1) hash map lookups.
+  const eventsByDate = useMemo(() => {
+    const map: Record<string, CampusEvent[]> = {};
+    for (const event of filteredEvents) {
+      if (!map[event.date]) {
+        map[event.date] = [];
+      }
+      map[event.date].push(event);
+    }
+    return map;
+  }, [filteredEvents]);
 
   const toggleRsvp = (eventId: string) => {
     setRsvpEvents(prev =>
@@ -75,7 +93,7 @@ END:VCALENDAR`;
           <span className="font-semibold text-gray-500 mr-1 flex items-center gap-1">
             <Tag className="w-3.5 h-3.5" /> Category:
           </span>
-          {categories.map(cat => (
+            {CATEGORIES.map(cat => (
             <button
               key={cat}
               type="button"
@@ -161,9 +179,9 @@ END:VCALENDAR`;
             <div className="h-24 sm:h-28 p-1.5 bg-gray-50/50 rounded-lg text-gray-300 text-xs">29</div>
             <div className="h-24 sm:h-28 p-1.5 bg-gray-50/50 rounded-lg text-gray-300 text-xs">30</div>
 
-            {daysInOctober.map(day => {
+            {DAYS_IN_OCTOBER.map(day => {
               const dayStr = `2026-10-${day < 10 ? '0' + day : day}`;
-              const dayEvents = filteredEvents.filter(e => e.date === dayStr);
+              const dayEvents = eventsByDate[dayStr] || [];
 
               return (
                 <div
