@@ -371,17 +371,25 @@ const defaultUsers: UserAccount[] = [
 
 let inMemoryUsers: UserAccount[] = [...defaultUsers];
 let inMemoryCurrentUserId: string | null = null;
+// Bolt Optimization: Cache flag to avoid redundant localStorage reads and JSON.parse() on every render/call
+let isUsersLoaded = false;
 
 export const userStore = {
   getUsers(): UserAccount[] {
+    if (isUsersLoaded) {
+      return inMemoryUsers;
+    }
     try {
       if (typeof localStorage === 'undefined') {
+        isUsersLoaded = true;
         return inMemoryUsers;
       }
       const stored = localStorage.getItem(USERS_STORAGE_KEY);
       if (!stored) {
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(defaultUsers));
-        return defaultUsers;
+        inMemoryUsers = [...defaultUsers];
+        isUsersLoaded = true;
+        return inMemoryUsers;
       }
       let users: UserAccount[] = JSON.parse(stored);
       // Ensure any fake teacher accounts are purged
@@ -389,11 +397,20 @@ export const userStore = {
       let changed = cleaned.length !== users.length;
       users = cleaned;
 
-      // Ensure default accounts exist and keep credentials in sync
+      // Fast O(1) lookup Map to ensure default accounts exist and keep credentials in sync
+      const userMapById = new Map<string, UserAccount>();
+      const userMapByEmail = new Map<string, UserAccount>();
+      users.forEach(u => {
+        userMapById.set(u.id, u);
+        userMapByEmail.set(u.email.toLowerCase(), u);
+      });
+
       defaultUsers.forEach(defaultUser => {
-        const existing = users.find(u => u.id === defaultUser.id || u.email.toLowerCase() === defaultUser.email.toLowerCase());
+        const existing = userMapById.get(defaultUser.id) || userMapByEmail.get(defaultUser.email.toLowerCase());
         if (!existing) {
           users.push(defaultUser);
+          userMapById.set(defaultUser.id, defaultUser);
+          userMapByEmail.set(defaultUser.email.toLowerCase(), defaultUser);
           changed = true;
         } else {
           // Always ensure password is populated
@@ -406,14 +423,19 @@ export const userStore = {
       if (changed) {
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
       }
-      return users;
+      inMemoryUsers = users;
+      isUsersLoaded = true;
+      return inMemoryUsers;
     } catch {
-      return defaultUsers;
+      inMemoryUsers = defaultUsers;
+      isUsersLoaded = true;
+      return inMemoryUsers;
     }
   },
 
   saveUsers(users: UserAccount[]): void {
     inMemoryUsers = users;
+    isUsersLoaded = true;
     try {
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
@@ -1350,7 +1372,11 @@ export const userStore = {
    * Reset data back to default initial seed
    */
   resetToDefaults(): void {
-    localStorage.removeItem(USERS_STORAGE_KEY);
-    localStorage.removeItem(CURRENT_USER_ID_KEY);
+    inMemoryUsers = [...defaultUsers];
+    isUsersLoaded = false;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(USERS_STORAGE_KEY);
+      localStorage.removeItem(CURRENT_USER_ID_KEY);
+    }
   }
 };
