@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { UserAccount, StudentProfile, Course, AttendanceRecord } from '../../types';
 import { userStore } from '../../data/userStore';
 import { SutLogo } from '../common/SutLogo';
@@ -255,39 +255,79 @@ export const StaffSisPortal: React.FC<Props> = ({
     setNewMsgText('');
   };
 
-  // Filter students for Student Register Course: only students enrolled in selectedCourse!
-  const courseCodeClean = selectedCourse.split('-')[0].trim().toUpperCase();
-  const filteredStudents = sutStudents.filter(s => {
-    const isEnrolled = s.courses && s.courses.some(c => 
-      c.code.toUpperCase() === courseCodeClean && (c.status === 'registered' || c.status === 'passed')
+  // ⚡ Bolt Optimization: Memoize course student filtering to prevent redundant array iterations on unrelated re-renders (e.g. typing chat messages or sidebar search)
+  const courseCodeClean = useMemo(() => selectedCourse.split('-')[0].trim().toUpperCase(), [selectedCourse]);
+
+  const filteredStudents = useMemo(() => {
+    return sutStudents.filter(s => {
+      const isEnrolled = s.courses && s.courses.some(c =>
+        c.code.toUpperCase() === courseCodeClean && (c.status === 'registered' || c.status === 'passed')
+      );
+      if (!isEnrolled) return false;
+
+      if (studentSearchQuery) {
+        const q = studentSearchQuery.toLowerCase();
+        return s.name.toLowerCase().includes(q) || s.studentId.includes(q) || s.email.toLowerCase().includes(q);
+      }
+      return true;
+    });
+  }, [sutStudents, courseCodeClean, studentSearchQuery]);
+
+  // ⚡ Bolt Optimization: Memoize advisee filtering to avoid re-filtering on every render frame
+  const adviseeResults = useMemo(() => {
+    return sutStudents.filter(s => {
+      // Only students where advisor matches this teacher
+      const isAssignedToThisTeacher = s.advisorName && (
+        s.advisorName.includes(teacherName) ||
+        (teacherName.includes('Hend') && s.advisorName.includes('Hend')) ||
+        (s.advisorEmail && s.advisorEmail.toLowerCase() === teacherEmail.toLowerCase())
+      );
+      if (!isAssignedToThisTeacher) return false;
+
+      if (advisingStudentId && !s.studentId.includes(advisingStudentId.trim())) return false;
+      if (advisingStudentName && !s.name.toLowerCase().includes(advisingStudentName.toLowerCase().trim())) return false;
+      if (advisingCgpaMin && s.cgpa < parseFloat(advisingCgpaMin)) return false;
+      if (advisingCgpaMax && s.cgpa > parseFloat(advisingCgpaMax)) return false;
+      if (advisingBlockFilter === 'block' && !s.blocked) return false;
+      if (advisingBlockFilter === 'unblock' && s.blocked) return false;
+      return true;
+    });
+  }, [
+    sutStudents, teacherName, teacherEmail,
+    advisingStudentId, advisingStudentName,
+    advisingCgpaMin, advisingCgpaMax, advisingBlockFilter
+  ]);
+
+  // ⚡ Bolt Optimization: Memoize course enrollment and student petitions computations to prevent unneeded re-filtering and synchronous userStore/localStorage reads during component re-renders
+  const enrolledInCourse = useMemo(() => {
+    return sutStudents.filter(s =>
+      s.courses && s.courses.some(c => c.code.toUpperCase() === 'CET442' && (c.status === 'registered' || c.status === 'passed'))
     );
-    if (!isEnrolled) return false;
+  }, [sutStudents]);
 
-    if (studentSearchQuery) {
-      const q = studentSearchQuery.toLowerCase();
-      return s.name.toLowerCase().includes(q) || s.studentId.includes(q) || s.email.toLowerCase().includes(q);
-    }
-    return true;
-  });
-
-  // Filter advisees for Academic Advising: based on actual student accounts the advisor has added/assigned!
-  const adviseeResults = sutStudents.filter(s => {
-    // Only students where advisor matches this teacher
-    const isAssignedToThisTeacher = s.advisorName && (
-      s.advisorName.includes(teacherName) || 
-      (teacherName.includes('Hend') && s.advisorName.includes('Hend')) ||
-      (s.advisorEmail && s.advisorEmail.toLowerCase() === teacherEmail.toLowerCase())
+  const enrolledAbsentees = useMemo(() => {
+    return sutStudents.filter(s =>
+      s.courses && s.courses.some(c => c.code.toUpperCase() === 'CET442') && (s.absences || 0) > 0
     );
-    if (!isAssignedToThisTeacher) return false;
+  }, [sutStudents]);
 
-    if (advisingStudentId && !s.studentId.includes(advisingStudentId.trim())) return false;
-    if (advisingStudentName && !s.name.toLowerCase().includes(advisingStudentName.toLowerCase().trim())) return false;
-    if (advisingCgpaMin && s.cgpa < parseFloat(advisingCgpaMin)) return false;
-    if (advisingCgpaMax && s.cgpa > parseFloat(advisingCgpaMax)) return false;
-    if (advisingBlockFilter === 'block' && !s.blocked) return false;
-    if (advisingBlockFilter === 'unblock' && s.blocked) return false;
-    return true;
-  });
+  const enrolledToGrade = useMemo(() => {
+    return sutStudents.filter(s =>
+      s.courses && s.courses.some(c => c.code.toUpperCase() === 'CET442' && (c.status === 'registered' || c.status === 'passed'))
+    );
+  }, [sutStudents]);
+
+  const realPetitions = useMemo(() => {
+    const allUsers = userStore.getUsers();
+    return allUsers
+      .filter(u => u.role === 'student' && u.requests && u.requests.length > 0)
+      .flatMap(u => (u.requests || []).map(r => ({
+        ...r,
+        studentId: u.studentProfile?.studentId || u.id,
+        studentName: u.name,
+        studentEmail: u.email
+      })));
+  }, [sutStudents]);
 
   return (
     <div className="min-h-screen bg-[#eaedf1] text-[#222933] flex flex-col font-sans text-xs select-none">
