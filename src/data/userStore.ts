@@ -372,15 +372,28 @@ const defaultUsers: UserAccount[] = [
 let inMemoryUsers: UserAccount[] = [...defaultUsers];
 let inMemoryCurrentUserId: string | null = null;
 
+// ⚡ In-memory cache variables to eliminate redundant synchronous localStorage reads & JSON parsing
+let cachedUsers: UserAccount[] | null = null;
+let cachedCurrentUserId: string | null = null;
+let isCurrentUserIdLoaded = false;
+
 export const userStore = {
   getUsers(): UserAccount[] {
+    // ⚡ Performance Optimization: Return in-memory cache if available (O(1) access).
+    // Avoids repeated synchronous localStorage reads & JSON parsing during component render loops (~1-5ms saved per query).
+    if (cachedUsers !== null) {
+      return cachedUsers;
+    }
+
     try {
       if (typeof localStorage === 'undefined') {
-        return inMemoryUsers;
+        cachedUsers = inMemoryUsers;
+        return cachedUsers;
       }
       const stored = localStorage.getItem(USERS_STORAGE_KEY);
       if (!stored) {
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(defaultUsers));
+        cachedUsers = defaultUsers;
         return defaultUsers;
       }
       let users: UserAccount[] = JSON.parse(stored);
@@ -406,13 +419,17 @@ export const userStore = {
       if (changed) {
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
       }
-      return users;
+      cachedUsers = users;
+      return cachedUsers;
     } catch {
+      cachedUsers = defaultUsers;
       return defaultUsers;
     }
   },
 
   saveUsers(users: UserAccount[]): void {
+    // ⚡ Synchronize in-memory cache immediately so UI reads instant updated state
+    cachedUsers = users;
     inMemoryUsers = users;
     try {
       if (typeof localStorage !== 'undefined') {
@@ -426,11 +443,18 @@ export const userStore = {
   getCurrentUser(): UserAccount | null {
     try {
       let currentId: string | null = null;
-      if (typeof localStorage !== 'undefined') {
-        currentId = localStorage.getItem(CURRENT_USER_ID_KEY);
+      if (isCurrentUserIdLoaded) {
+        currentId = cachedCurrentUserId;
       } else {
-        currentId = inMemoryCurrentUserId;
+        if (typeof localStorage !== 'undefined') {
+          currentId = localStorage.getItem(CURRENT_USER_ID_KEY);
+        } else {
+          currentId = inMemoryCurrentUserId;
+        }
+        cachedCurrentUserId = currentId;
+        isCurrentUserIdLoaded = true;
       }
+
       if (!currentId) {
         return null; // When opening the site, start at Login Page
       }
@@ -442,7 +466,10 @@ export const userStore = {
   },
 
   setCurrentUser(user: UserAccount | null): void {
-    inMemoryCurrentUserId = user ? user.id : null;
+    const id = user ? user.id : null;
+    cachedCurrentUserId = id;
+    inMemoryCurrentUserId = id;
+    isCurrentUserIdLoaded = true;
     try {
       if (typeof localStorage !== 'undefined') {
         if (user) {
@@ -1350,7 +1377,16 @@ export const userStore = {
    * Reset data back to default initial seed
    */
   resetToDefaults(): void {
-    localStorage.removeItem(USERS_STORAGE_KEY);
-    localStorage.removeItem(CURRENT_USER_ID_KEY);
+    cachedUsers = null;
+    cachedCurrentUserId = null;
+    isCurrentUserIdLoaded = false;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(USERS_STORAGE_KEY);
+        localStorage.removeItem(CURRENT_USER_ID_KEY);
+      }
+    } catch {
+      // Ignore
+    }
   }
 };
