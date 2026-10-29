@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { UserAccount, Course } from '../../types';
 import { userStore } from '../../data/userStore';
 import { 
@@ -118,64 +118,67 @@ export const DatabaseStudentsDirectory: React.FC<Props> = ({
     }
   };
 
-  // Filter students
-  const filteredStudents = students.filter(s => {
-    const profile = s.studentProfile;
-    if (!profile) return false;
+  // ⚡ Performance Optimization: Memoize filtered student list calculation.
+  // Prevents expensive multi-field array filtering and string manipulations on every re-render (e.g. during toast timers or modal toggles).
+  const filteredStudents = useMemo(() => {
+    return students.filter(s => {
+      const profile = s.studentProfile;
+      if (!profile) return false;
 
-    // Search query
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      const matchName = s.name.toLowerCase().includes(q) || profile.studentName.toLowerCase().includes(q);
-      const matchId = profile.studentId.toLowerCase().includes(q);
-      const matchEmail = s.email.toLowerCase().includes(q);
-      if (!matchName && !matchId && !matchEmail) return false;
-    }
-
-    // Program
-    if (selectedProgram !== 'All') {
-      if (!profile.studentProgram.toLowerCase().includes(selectedProgram.toLowerCase())) {
-        return false;
+      // Search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchName = s.name.toLowerCase().includes(q) || profile.studentName.toLowerCase().includes(q);
+        const matchId = profile.studentId.toLowerCase().includes(q);
+        const matchEmail = s.email.toLowerCase().includes(q);
+        if (!matchName && !matchId && !matchEmail) return false;
       }
-    }
 
-    // Level
-    if (selectedLevel !== 'All') {
-      if (profile.level !== selectedLevel) return false;
-    }
+      // Program
+      if (selectedProgram !== 'All') {
+        if (!profile.studentProgram.toLowerCase().includes(selectedProgram.toLowerCase())) {
+          return false;
+        }
+      }
 
-    // Advisor filter
-    if (advisorFilter === 'my-advisees') {
-      const isMyAdvisee = profile.advisorName.includes(teacherName) || 
-        profile.advisorEmail?.toLowerCase() === teacherEmail.toLowerCase() ||
-        (teacherName.includes('Hend') && profile.advisorName.includes('Hend'));
-      if (!isMyAdvisee) return false;
-    } else if (advisorFilter === 'unassigned') {
-      const isUnassigned = !profile.advisorName || 
-        profile.advisorName.includes('Pending') || 
-        profile.advisorName.includes('Unassigned');
-      if (!isUnassigned) return false;
-    } else if (advisorFilter === 'others') {
-      const isMyAdvisee = profile.advisorName.includes(teacherName) || 
-        profile.advisorEmail?.toLowerCase() === teacherEmail.toLowerCase() ||
-        (teacherName.includes('Hend') && profile.advisorName.includes('Hend'));
-      const isUnassigned = !profile.advisorName || 
-        profile.advisorName.includes('Pending') || 
-        profile.advisorName.includes('Unassigned');
-      if (isMyAdvisee || isUnassigned) return false;
-    }
+      // Level
+      if (selectedLevel !== 'All') {
+        if (profile.level !== selectedLevel) return false;
+      }
 
-    // Course filter
-    if (courseFilter !== 'All') {
-      const cleanFilter = courseFilter.split('-')[0].trim().toUpperCase();
-      const isEnrolled = s.courses?.some(c => 
-        c.code.toUpperCase() === cleanFilter && (c.status === 'registered' || c.status === 'passed')
-      );
-      if (!isEnrolled) return false;
-    }
+      // Advisor filter
+      if (advisorFilter === 'my-advisees') {
+        const isMyAdvisee = profile.advisorName.includes(teacherName) ||
+          profile.advisorEmail?.toLowerCase() === teacherEmail.toLowerCase() ||
+          (teacherName.includes('Hend') && profile.advisorName.includes('Hend'));
+        if (!isMyAdvisee) return false;
+      } else if (advisorFilter === 'unassigned') {
+        const isUnassigned = !profile.advisorName ||
+          profile.advisorName.includes('Pending') ||
+          profile.advisorName.includes('Unassigned');
+        if (!isUnassigned) return false;
+      } else if (advisorFilter === 'others') {
+        const isMyAdvisee = profile.advisorName.includes(teacherName) ||
+          profile.advisorEmail?.toLowerCase() === teacherEmail.toLowerCase() ||
+          (teacherName.includes('Hend') && profile.advisorName.includes('Hend'));
+        const isUnassigned = !profile.advisorName ||
+          profile.advisorName.includes('Pending') ||
+          profile.advisorName.includes('Unassigned');
+        if (isMyAdvisee || isUnassigned) return false;
+      }
 
-    return true;
-  });
+      // Course filter
+      if (courseFilter !== 'All') {
+        const cleanFilter = courseFilter.split('-')[0].trim().toUpperCase();
+        const isEnrolled = s.courses?.some(c =>
+          c.code.toUpperCase() === cleanFilter && (c.status === 'registered' || c.status === 'passed')
+        );
+        if (!isEnrolled) return false;
+      }
+
+      return true;
+    });
+  }, [students, searchQuery, selectedProgram, selectedLevel, advisorFilter, courseFilter, teacherName, teacherEmail]);
 
   return (
     <div className="space-y-4">
