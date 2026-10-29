@@ -1,5 +1,5 @@
 # Bolt's Performance Journal
 
-## 2026-10-29 - In-Memory Cache for User Data Store
-**Learning:** Synchronous `localStorage.getItem` and `JSON.parse` operations in frequently called data getters (such as `userStore.getUsers()`) during React component render cycles introduce significant I/O and parsing overhead.
-**Action:** Always maintain an in-memory reference cache for client-side stores and invalidate/update the cache only when mutations occur.
+## 2026-10-29 - Memoizing Student Directory Array Filtering
+**Learning:** Computing multi-field array filtering and string normalizations directly in the render body of large list components (such as `DatabaseStudentsDirectory`) executes on every render cycle—including during unrelated state updates like toast timers or modal toggles.
+**Action:** Use `React.useMemo` for heavy multi-field search and array filtering operations with comprehensive dependency arrays to avoid redundant calculations.
