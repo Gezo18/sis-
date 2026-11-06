@@ -249,9 +249,12 @@ export const CampusHome: React.FC<Props> = ({ student, onOpenSis, onSelectTab })
               className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-xs hover:border-[#0c4ca3] hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
             >
               <div className="h-44 overflow-hidden bg-gray-100">
+                {/* Performance optimization: lazy load below-the-fold news images and decode asynchronously to prevent main-thread jank */}
                 <img
                   src={item.image}
                   alt={item.title}
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
                   referrerPolicy="no-referrer"
                 />
