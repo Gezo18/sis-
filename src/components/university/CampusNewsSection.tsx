@@ -28,9 +28,12 @@ export const CampusNewsSection: React.FC = () => {
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-xs hover:shadow-md transition-shadow">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
           <div className="lg:col-span-7 h-64 lg:h-auto relative overflow-hidden bg-gray-100">
+            {/* Performance optimization: Lead article image is above the fold; fetch with high priority and decode asynchronously */}
             <img
               src={campusNewsList[0].image}
               alt={campusNewsList[0].title}
+              fetchPriority="high"
+              decoding="async"
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
               referrerPolicy="no-referrer"
             />
@@ -83,9 +86,12 @@ export const CampusNewsSection: React.FC = () => {
             className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-xs hover:border-[#0c4ca3] hover:shadow-md transition-all flex flex-col justify-between"
           >
             <div className="h-48 overflow-hidden bg-gray-100 relative">
+              {/* Performance optimization: Grid images are further down the page; lazy load to defer network request */}
               <img
                 src={news.image}
                 alt={news.title}
+                loading="lazy"
+                decoding="async"
                 className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"
               />
@@ -148,9 +154,12 @@ export const CampusNewsSection: React.FC = () => {
               </div>
 
               <div className="h-56 rounded-lg overflow-hidden bg-gray-100">
+                {/* Performance optimization: Modal dialog image loaded on demand */}
                 <img
                   src={selectedArticle.image}
                   alt={selectedArticle.title}
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
                 />

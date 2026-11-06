@@ -601,7 +601,8 @@ export const campusNewsList: CampusNews[] = [
     date: 'April 20, 2026',
     summary: 'A new bilateral agreement provides SUT graduates with recognized European technological diploma certifications alongside the Egyptian B.Tech degree.',
     content: 'Elsewedy University of Technology (SUT) has formalized a landmark partnership with leading German and Austrian applied technical universities. Under this framework, curricula in Computer Science Technology, Embedded Systems, and Smart Manufacturing are audited to European ENQA standards, granting graduating engineers dual accreditation.',
-    image: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1200&q=80',
+    // Performance: Deliver next-gen modern WebP format (&fm=webp) with responsive constraints
+    image: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1200&q=80&fm=webp',
     readTime: '4 min read',
   },
   {
@@ -611,7 +612,8 @@ export const campusNewsList: CampusNews[] = [
     date: 'April 14, 2026',
     summary: 'Equipped with state-of-the-art GPU clusters, the new center accelerates student research in computer vision, robotics, and industrial automation.',
     content: 'The Faculty of Information Technology officially launched the SUT Supercomputing and Applied Artificial Intelligence Center. The facility gives undergraduate and postgraduate researchers access to high-performance GPU clusters for training large foundational models and industrial sensor analytics.',
-    image: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=1200&q=80',
+    // Performance: Deliver next-gen modern WebP format (&fm=webp) with responsive constraints
+    image: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=1200&q=80&fm=webp',
     readTime: '3 min read',
   },
   {
@@ -621,7 +623,8 @@ export const campusNewsList: CampusNews[] = [
     date: 'March 28, 2026',
     summary: 'Students demonstrated an autonomous warehouse delivery robot designed specifically for heavy industrial manufacturing plants.',
     content: 'Demonstrating the power of Elsewedy’s dual study model, a team of sophomore and junior engineering students clinched first place at Egypt’s National Industrial Innovation Olympiad with their autonomous guided vehicle (AGV).',
-    image: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=1200&q=80',
+    // Performance: Deliver next-gen modern WebP format (&fm=webp) with responsive constraints
+    image: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=1200&q=80&fm=webp',
     readTime: '3 min read',
   },
 ];
