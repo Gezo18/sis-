@@ -28,11 +28,10 @@ export const CampusNewsSection: React.FC = () => {
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-xs hover:shadow-md transition-shadow">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
           <div className="lg:col-span-7 h-64 lg:h-auto relative overflow-hidden bg-gray-100">
-            {/* Performance optimization: Lead article image is above the fold; fetch with high priority and decode asynchronously */}
+            {/* Lead article image is above the fold; decode asynchronously to prevent main-thread jank */}
             <img
               src={campusNewsList[0].image}
               alt={campusNewsList[0].title}
-              fetchPriority="high"
               decoding="async"
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
               referrerPolicy="no-referrer"
