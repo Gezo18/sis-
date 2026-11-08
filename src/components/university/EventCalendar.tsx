@@ -1,7 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { CampusEvent } from '../../types';
 import { campusEvents } from '../../data/mockData';
 import { Calendar, Clock, MapPin, Tag, Users, CheckCircle2, Download, Share2, ChevronLeft, ChevronRight } from 'lucide-react';
+
+// Static calendar days hoisted outside component to avoid re-allocating 31-element array on every render
+const DAYS_IN_OCTOBER = Array.from({ length: 31 }, (_, i) => i + 1);
+const CATEGORIES = ['All', 'Academic', 'Workshop', 'Career', 'Sports'];
 
 export const EventCalendar: React.FC = () => {
   const [events, setEvents] = useState<CampusEvent[]>(campusEvents);
@@ -11,12 +15,28 @@ export const EventCalendar: React.FC = () => {
   const [rsvpEvents, setRsvpEvents] = useState<string[]>([]);
   const [currentMonth, setCurrentMonth] = useState<string>('October 2026');
 
-  const categories = ['All', 'Academic', 'Workshop', 'Career', 'Sports'];
+  // Performance Optimization: Memoize filtered events by category to prevent redundant
+  // array allocations and iterations on unrelated state changes (e.g., RSVP toggle, modal open/close, month navigation).
+  const filteredEvents = useMemo(() => {
+    if (selectedCategory === 'All') return events;
+    return events.filter(e => e.category === selectedCategory);
+  }, [events, selectedCategory]);
 
-  const filteredEvents = events.filter(e => {
-    if (selectedCategory === 'All') return true;
-    return e.category === selectedCategory;
-  });
+  // Performance Optimization: Group filtered events by date into an O(1) hash map lookup.
+  // Replaces the O(N * 31) nested linear filtering on each day cell in the calendar view
+  // with a single O(N) pre-pass, eliminating 31 array allocations per render cycle.
+  const eventsByDate = useMemo(() => {
+    const map: Record<string, CampusEvent[]> = {};
+    for (let i = 0; i < filteredEvents.length; i++) {
+      const evt = filteredEvents[i];
+      if (!map[evt.date]) {
+        map[evt.date] = [evt];
+      } else {
+        map[evt.date].push(evt);
+      }
+    }
+    return map;
+  }, [filteredEvents]);
 
   const toggleRsvp = (eventId: string) => {
     setRsvpEvents(prev =>
@@ -47,9 +67,6 @@ END:VCALENDAR`;
     document.body.removeChild(link);
   };
 
-  // Days in calendar month (October 2026: Oct 1 is Thursday)
-  const daysInOctober = Array.from({ length: 31 }, (_, i) => i + 1);
-
   return (
     <div className="py-8 px-4 sm:px-6 max-w-7xl mx-auto space-y-6">
       {/* Banner */}
@@ -75,7 +92,7 @@ END:VCALENDAR`;
           <span className="font-semibold text-gray-500 mr-1 flex items-center gap-1">
             <Tag className="w-3.5 h-3.5" /> Category:
           </span>
-          {categories.map(cat => (
+          {CATEGORIES.map(cat => (
             <button
               key={cat}
               type="button"
@@ -161,9 +178,10 @@ END:VCALENDAR`;
             <div className="h-24 sm:h-28 p-1.5 bg-gray-50/50 rounded-lg text-gray-300 text-xs">29</div>
             <div className="h-24 sm:h-28 p-1.5 bg-gray-50/50 rounded-lg text-gray-300 text-xs">30</div>
 
-            {daysInOctober.map(day => {
+            {DAYS_IN_OCTOBER.map(day => {
               const dayStr = `2026-10-${day < 10 ? '0' + day : day}`;
-              const dayEvents = filteredEvents.filter(e => e.date === dayStr);
+              // O(1) dictionary lookup instead of O(N) array filter scan
+              const dayEvents = eventsByDate[dayStr] || [];
 
               return (
                 <div
